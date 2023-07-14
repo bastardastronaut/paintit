@@ -1,0 +1,63 @@
+[1] ContractEventPayload {
+[1]   filter: 'NewIdentity',
+[1]   emitter: Contract {
+[1]     target: '0x28fdca8a5c51787ff1303a25c590fe2079dcc73d',
+[1]     interface: Interface {
+[1]       fragments: [Array],
+[1]       deploy: [ConstructorFragment],
+[1]       fallback: null,
+[1]       receive: false
+[1]     },
+[1]     runner: Wallet {
+[1]       provider: JsonRpcProvider {},
+[1]       address: '0xaF97644d9C5679eb154fAae1b50C96bd6853E88d'
+[1]     },
+[1]     filters: {},
+[1]     fallback: null,
+[1]     [Symbol(_ethersInternal_contract)]: {}
+[1]   },
+[1]   log: EventLog {
+[1]     provider: JsonRpcProvider {},
+[1]     transactionHash: '0x78f8a46b9dca4e3047a74e9fcdc6accddd9a46de0da76c724ed2440d46302015',
+[1]     blockHash: '0x347b84f6c8cd526a5a86b001934c6c07eec0c5869fb6beb5063052ccbe886ec0',
+[1]     blockNumber: 3168653,
+[1]     removed: false,
+[1]     address: '0x28FdcA8A5c51787Ff1303a25c590FE2079dcC73d',
+[1]     data: '0x29b228ef34fc1954cc8b3b5e00f71be85d31c8f371bccd808c6b13344951ac41',
+[1]     topics: [
+[1]       '0x7d283d237645061f01f183913358dcaaeeb0cfa4ca321c919aa8759f9450f265',
+[1]       '0x0000000000000000000000004c5515670898b788c8eaaaf880ad8dbec4a4c3cc',
+[1]       '0x000000000000000000000000af97644d9c5679eb154faae1b50c96bd6853e88d'
+[1]     ],
+[1]     index: 1,
+[1]     transactionIndex: 6,
+[1]     interface: Interface {
+[1]       fragments: [Array],
+[1]       deploy: [ConstructorFragment],
+[1]       fallback: null,
+[1]       receive: false
+[1]     },
+[1]     fragment: EventFragment {
+[1]       type: 'event',
+[1]       inputs: [Array],
+[1]       name: 'NewIdentity',
+[1]       anonymous: false
+[1]     },
+[1]     args: Result(3) [
+[1]       '0x4C5515670898b788C8EAAaf880Ad8dbEC4a4C3cC',
+[1]       '0xaF97644d9C5679eb154fAae1b50C96bd6853E88d',
+[1]       '0x29b228ef34fc1954cc8b3b5e00f71be85d31c8f371bccd808c6b13344951ac41'
+[1]     ]
+[1]   },
+[1]   args: Result(3) [
+[1]     '0x4C5515670898b788C8EAAaf880Ad8dbEC4a4C3cC',
+[1]     '0xaF97644d9C5679eb154fAae1b50C96bd6853E88d',
+[1]     '0x29b228ef34fc1954cc8b3b5e00f71be85d31c8f371bccd808c6b13344951ac41'
+[1]   ],
+[1]   fragment: EventFragment {
+[1]     type: 'event',
+[1]     inputs: [ [ParamType], [ParamType], [ParamType] ],
+[1]     name: 'NewIdentity',
+[1]     anonymous: false
+[1]   }
+[1] }
