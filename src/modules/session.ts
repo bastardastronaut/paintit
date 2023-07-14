@@ -221,6 +221,7 @@ export default async (
   };
 
   const finishSession = async (s: Session) => {
+    console.log(`finishing session ${s.hash}`)
     // need to calculate contributions and create transactions
     const contributions = await loadSessionContributions(s.hash);
     return database
@@ -259,7 +260,7 @@ export default async (
   };
 
   for (const s of currentSessions) {
-    if (s.current_iteration > 0) {
+    if (s.current_iteration > 0 && s.current_iteration < ITERATION_COUNT) {
       clock
         .at(s!.iteration_started_at + ITERATION_LENGTH)
         .then(() => progressSession(s));
@@ -539,7 +540,7 @@ export default async (
         // TODO: check against whether match has already the same prompt?
         if (
           matchingPrompts &&
-          matchingPrompts.matchCount > consensusRequirement - 1
+          matchingPrompts.matchCount >= consensusRequirement - 1
         ) {
           // proceed with completion
 

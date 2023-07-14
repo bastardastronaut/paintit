@@ -247,7 +247,7 @@ export default class Database {
 
   getActiveSessions(): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration < 4 ORDER BY created_at DESC`
+      `SELECT * FROM sessions WHERE current_iteration < 5 ORDER BY created_at DESC`
     );
   }
 
@@ -259,7 +259,7 @@ export default class Database {
 
   getArchivedSessions(limit = 3, offset = 0): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration == 4 ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT * FROM sessions WHERE current_iteration == 5 ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
     );
   }
 
