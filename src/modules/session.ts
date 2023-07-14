@@ -22,6 +22,7 @@ const ITERATION_COUNT = 5;
 const ITERATION_PAINT = 1000;
 const BATCH_FRAMERATE_SECONDS = 10;
 const PROMPT_WORD_LENGTH = 5;
+const EXCLUDED = ["the", "a", "an"];
 
 /*
 const DIMENSIONS = [
@@ -154,7 +155,16 @@ export default async (
     return database.getSessionByHash(sessionHash).then((s) => {
       if (!s) throw new Error("session loading failed");
 
+      const missingWordCount =
+        s.current_iteration === 0
+          ? PROMPT_WORD_LENGTH -
+            s.prompt
+              .split(" ")
+              .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length
+          : 0;
+
       return {
+        missingWordCount,
         paletteIndex: s.palette_index,
         columns: s.columns,
         rows: s.rows,
@@ -221,7 +231,7 @@ export default async (
   };
 
   const finishSession = async (s: Session) => {
-    console.log(`finishing session ${s.hash}`)
+    console.log(`finishing session ${s.hash}`);
     // need to calculate contributions and create transactions
     const contributions = await loadSessionContributions(s.hash);
     return database
@@ -332,7 +342,6 @@ export default async (
             paletteIndex: palette_index,
             sessionType: session_type,
             createdAt: created_at,
-            maxIterations: ITERATION_COUNT,
           })
         )
       ),
@@ -505,10 +514,9 @@ export default async (
     ) => {
       const text = promptWord.trim();
       const words = text.split(" ");
-      const excluded = ["the", "a", "an"];
       if (
         words.length > 2 ||
-        (words.length === 2 && !excluded.includes(words[0].toLowerCase())) ||
+        (words.length === 2 && !EXCLUDED.includes(words[0].toLowerCase())) ||
         !(await spellCheck(text))
       )
         throw new BadRequestError("invalid prompt");
@@ -549,7 +557,7 @@ export default async (
           const isComplete =
             session.prompt
               .split(" ")
-              .filter((s) => !excluded.includes(s.toLowerCase())).length ===
+              .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length ===
             PROMPT_WORD_LENGTH - 1;
 
           await database.updateSessionPrompt(
