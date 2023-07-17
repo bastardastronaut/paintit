@@ -17,6 +17,7 @@ import {
 } from "ethers";
 import path from "path";
 import FileSystem from "./modules/filesystem";
+import Contract from "./modules/contract";
 import Database from "./modules/database";
 import Paint from "./modules/paint";
 import Clock from "./modules/clock";
@@ -24,30 +25,6 @@ import endpoints from "./endpoints";
 import { NotFoundError, BadRequestError } from "./errors";
 import spellCheck from "./spellCheck";
 import palettes from "./palettes";
-
-const wallet = new Wallet(
-  "0x33480a1707785a1a01f886c9c6dd5e771120c0b5436ace572e833e69203d1ea1"
-);
-
-/*
- * for future reference
-const time = Math.round(new Date().getTime() / 1000);
-const amount = 100;
-const sender = "0xf5b34315cAaeb023605B19Ffb07c0c754e7cCcde";
-const padNum = (value:number, n = 32) => zeroPadValue(toBeArray(value), n)
-const message = concat([sender, padNum(time, 8), padNum(amount)])
-console.log(getBytes(message))
-console.log(time)
-wallet.signMessage(getBytes(message)).then(signature => {
-  console.log(Signature.from(signature))
-  console.log(Signature.from(signature).v)
-  console.log(Signature.from(signature).r)
-  console.log(Signature.from(signature).s)
-
-  console.log(getBytes(message).length)
-
-  console.log(verifyMessage(message, signature))
-})*/
 
 const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
@@ -73,299 +50,317 @@ const PATH = `${__dirname}/${process.env.APP_PATH || ".."}`;
 const filesystem = new FileSystem(PATH);
 const clock = new Clock();
 const paint = new Paint();
+const contract = new Contract(
+  new Wallet(
+    process.env.ACCOUNT_ADDRESS ||
+      "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d"
+  )
+);
+Promise.all([database.initialize(), contract.initialize()])
+  .then(() => endpoints(database, filesystem, paint, clock, contract))
+  .then(
+    ({
+      // publicly available endpoints
+      getSessionCanvas,
+      getSessionInitialCanvas,
+      getSession,
+      getSessionPaint,
+      getSessionPromptByIdentity,
+      getSessionActivity,
+      getSessions,
+      getSessionContributions,
+      getSessionSnapshot,
+      getSessionPrompts,
+      getPixelHistory,
+      getArchivedSessions,
+      getSessionAnimation,
+      getTransactions,
 
-database.initialize();
+      // endpoints behind authorization
+      registerAccount,
+      postSessionPaint,
+      postSessionPrompt,
+      requestWithdrawal,
+    }) => {
+      // canvas connections
+      const app = express();
+      const server = app.listen(PORT);
+      const processError = (res: Response, e: Error) => {
+        console.log(e);
+        res.sendStatus(
+          e instanceof NotFoundError
+            ? 404
+            : e instanceof BadRequestError
+            ? 400
+            : 500
+        );
+      };
 
-endpoints(database, filesystem, paint, clock).then(
-  ({
-    // publicly available endpoints
-    getSessionCanvas,
-    getSessionInitialCanvas,
-    getSession,
-    getSessionPaint,
-    getSessionPromptByIdentity,
-    getSessionActivity,
-    getSessions,
-    getSessionContributions,
-    getSessionSnapshot,
-    getSessionPrompts,
-    getPixelHistory,
-    getArchivedSessions,
-    getSessionAnimation,
-    getTransactions,
+      app.use((req, res, next) => {
+        console.log(req.url);
+        next();
+      });
 
-    // endpoints behind authorization
-    registerAccount,
-    postSessionPaint,
-    postSessionPrompt,
-  }) => {
+      app.use(cors());
 
-    // canvas connections
-    const app = express();
-    const server = app.listen(PORT);
-    const processError = (res: Response, e: Error) => {
-      console.log(e);
-      res.sendStatus(
-        e instanceof NotFoundError
-          ? 404
-          : e instanceof BadRequestError
-          ? 400
-          : 500
-      );
-    };
+      app.get(`${BASE_URL}/transactions/:identity`, (req, res) => {
+        return getTransactions(req.params.identity)
+          .then((transactions) => res.send(transactions))
+          .catch((e) => processError(res, e));
+      });
 
-    app.use((req, res, next) => {
-      console.log(req.url);
-      next();
-    });
+      app.get(`${BASE_URL}/palettes`, (req, res) => {
+        res.send(palettes);
+      });
 
-    app.use(cors());
+      app.get(`${BASE_URL}/sessions`, (req, res) => {
+        getSessions()
+          .then((result) => res.send(result))
+          .catch((e) => processError(res, e));
+      });
 
-    app.get(`${BASE_URL}/transactions/:identity`, (req, res) => {
-      return getTransactions(req.params.identity)
-        .then((transactions) => res.send(transactions))
-        .catch((e) => processError(res, e));
-    });
-
-    app.get(`${BASE_URL}/palettes`, (req, res) => {
-      res.send(palettes);
-    });
-
-    app.get(`${BASE_URL}/sessions`, (req, res) => {
-      getSessions()
-        .then((result) => res.send(result))
-        .catch((e) => processError(res, e));
-    });
-
-    app.get(`${BASE_URL}/archived-sessions`, (req, res) => {
-      // TODO: watch for SQL injection!
-      getArchivedSessions(
-        parseInt(req.query.limit as string) || 3,
-        parseInt(req.query.offset as string) || 0
-      )
-        .then((result) => res.send(result))
-        .catch((e) => processError(res, e));
-    });
-
-    app.get(
-      `${BASE_URL}/sessions/:sessionHash/history/:positionIndex`,
-      (req, res) => {
-        getPixelHistory(
-          req.params.sessionHash,
-          parseInt(req.params.positionIndex)
+      app.get(`${BASE_URL}/archived-sessions`, (req, res) => {
+        // TODO: watch for SQL injection!
+        getArchivedSessions(
+          parseInt(req.query.limit as string) || 3,
+          parseInt(req.query.offset as string) || 0
         )
           .then((result) => res.send(result))
           .catch((e) => processError(res, e));
-      }
-    );
+      });
 
-    app.get(`${BASE_URL}/sessions/:sessionHash`, (req, res) => {
-      return getSession(req.params.sessionHash)
-        .then((session) => res.send(session))
-        .catch((e) => processError(res, e));
-    });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/history/:positionIndex`,
+        (req, res) => {
+          getPixelHistory(
+            req.params.sessionHash,
+            parseInt(req.params.positionIndex)
+          )
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/canvas`, (req, res) => {
-      return getSessionCanvas(req.params.sessionHash)
-        .then((canvas) => res.end(canvas, "binary"))
-        .catch((e) => processError(res, e));
-    });
+      app.get(`${BASE_URL}/sessions/:sessionHash`, (req, res) => {
+        return getSession(req.params.sessionHash)
+          .then((session) => res.send(session))
+          .catch((e) => processError(res, e));
+      });
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/initial-canvas`, (req, res) => {
-      return getSessionInitialCanvas(req.params.sessionHash)
-        .then((canvas) => res.end(canvas, "binary"))
-        .catch((e) => processError(res, e));
-    });
+      app.get(`${BASE_URL}/sessions/:sessionHash/canvas`, (req, res) => {
+        return getSessionCanvas(req.params.sessionHash)
+          .then((canvas) => res.end(canvas, "binary"))
+          .catch((e) => processError(res, e));
+      });
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/contributions`, (req, res) => {
-      return getSessionContributions(req.params.sessionHash)
-        .then((prompts) => res.send(prompts))
-        .catch((e) => processError(res, e));
-    });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/initial-canvas`,
+        (req, res) => {
+          return getSessionInitialCanvas(req.params.sessionHash)
+            .then((canvas) => res.end(canvas, "binary"))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/prompts`, (req, res) => {
-      return getSessionPrompts(req.params.sessionHash)
-        .then((prompts) => res.send(prompts))
-        .catch((e) => processError(res, e));
-    });
+      app.get(`${BASE_URL}/sessions/:sessionHash/contributions`, (req, res) => {
+        return getSessionContributions(req.params.sessionHash)
+          .then((prompts) => res.send(prompts))
+          .catch((e) => processError(res, e));
+      });
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/image.gif`, (req, res) => {
-      // TODO: set HTTP headers to not cache the image
-      return getSessionSnapshot(req.params.sessionHash)
-        .then((stream) => stream.pipe(res))
-        .catch((e) => processError(res, e));
-    });
+      app.get(`${BASE_URL}/sessions/:sessionHash/prompts`, (req, res) => {
+        return getSessionPrompts(req.params.sessionHash)
+          .then((prompts) => res.send(prompts))
+          .catch((e) => processError(res, e));
+      });
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/animation.gif`, (req, res) => {
-      // TODO: set HTTP headers to not cache the image
-      return getSessionAnimation(req.params.sessionHash)
-        .then((stream) => stream.pipe(res))
-        .catch((e) => processError(res, e));
-    });
+      app.get(`${BASE_URL}/sessions/:sessionHash/image.gif`, (req, res) => {
+        // TODO: set HTTP headers to not cache the image
+        return getSessionSnapshot(req.params.sessionHash)
+          .then((stream) => stream.pipe(res))
+          .catch((e) => processError(res, e));
+      });
 
-    /*
+      app.get(`${BASE_URL}/sessions/:sessionHash/animation.gif`, (req, res) => {
+        // TODO: set HTTP headers to not cache the image
+        return getSessionAnimation(req.params.sessionHash)
+          .then((stream) => stream.pipe(res))
+          .catch((e) => processError(res, e));
+      });
+
+      /*
     app.get(`${BASE_URL}/sessions/:sessionHash/history/:positionIndex`, (req, res) => {
       return getSessionPixelHistory(req.params.positionIndex)
         .then((session) => res.end(session, "binary"))
         .catch(() => res.sendStatus(400));
     });*/
 
-    app.get(
-      `${BASE_URL}/sessions/:sessionHash/activity/:identity`,
-      (req, res) => {
-        return getSessionActivity(req.params.sessionHash, req.params.identity)
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/activity/:identity`,
+        (req, res) => {
+          return getSessionActivity(req.params.sessionHash, req.params.identity)
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
+
+      // returns all activity until revision
+      app.get(`${BASE_URL}/sessions/:sessionHash/activity`, (req, res) => {
+        return getSessionActivity(req.params.sessionHash)
           .then((result) => res.send(result))
           .catch((e) => processError(res, e));
-      }
-    );
+      });
 
-    // returns all activity until revision
-    app.get(`${BASE_URL}/sessions/:sessionHash/activity`, (req, res) => {
-      return getSessionActivity(req.params.sessionHash)
-        .then((result) => res.send(result))
-        .catch((e) => processError(res, e));
-    });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/paint/:identity`,
+        (req, res) => {
+          return getSessionPaint(req.params.sessionHash, req.params.identity)
+            .then((result) => res.send(result.toString()))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-    app.get(`${BASE_URL}/sessions/:sessionHash/paint/:identity`, (req, res) => {
-      return getSessionPaint(req.params.sessionHash, req.params.identity)
-        .then((result) => res.send(result.toString()))
-        .catch((e) => processError(res, e));
-    });
-
-    app.get(
-      `${BASE_URL}/sessions/:sessionHash/prompt/:identity`,
-      (req, res) => {
-        return getSessionPromptByIdentity(
-          req.params.sessionHash,
-          req.params.identity
-        )
+      app.get(`${BASE_URL}/withdrawals/:signature/:amount`, (req, res) => {
+        return requestWithdrawal(`0x${req.params.signature}`, req.params.amount)
           .then((result) => res.send(result))
           .catch((e) => processError(res, e));
-      }
-    );
+      });
 
-    app.post(
-      `${BASE_URL}/create-account`,
-      bodyParser.urlencoded({ limit: 128, extended: true }),
-      (req, res) =>
-        registerAccount(req.body.account, "")
-          .then(() => res.sendStatus(201))
-          .catch((e) => processError(res, e))
-    );
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/prompt/:identity`,
+        (req, res) => {
+          return getSessionPromptByIdentity(
+            req.params.sessionHash,
+            req.params.identity
+          )
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-    app.post(
-      `${BASE_URL}/sessions/:sessionHash/paint`,
-      // we should use base64 eventually
-      bodyParser.urlencoded({ limit: 384, extended: true }),
-      (req, res) => {
-        const positionIndex = parseInt(req.body.positionIndex);
-        const colorIndex = parseInt(req.body.colorIndex);
-        // basically all POST endpoints but especially this one needs rate limiting
-        // allowing for 1 paint every 5 seconds the most frequency
-        postSessionPaint(
-          req.params.sessionHash,
-          req.body.identity,
-          req.body.revision,
-          req.body.signature,
-          positionIndex,
-          colorIndex
-        )
-          .then((updatedRevision) => {
-            // TODO: return ACK
-            res.sendStatus(200);
+      app.post(
+        `${BASE_URL}/create-account`,
+        bodyParser.urlencoded({ limit: 128, extended: true }),
+        (req, res) =>
+          registerAccount(req.body.account, "")
+            .then(() => res.sendStatus(201))
+            .catch((e) => processError(res, e))
+      );
 
-            notify(
-              req.params.sessionHash,
-              "canvas-update",
-              encodeBase64(
-                concat([
-                  new Uint8Array([colorIndex]),
-                  zeroPadValue(toBeArray(positionIndex), 4),
-                  updatedRevision,
-                ])
-              )
-            );
-          })
-          .catch((e) => processError(res, e));
-      }
-    );
+      app.post(
+        `${BASE_URL}/sessions/:sessionHash/paint`,
+        // we should use base64 eventually
+        bodyParser.urlencoded({ limit: 384, extended: true }),
+        (req, res) => {
+          const positionIndex = parseInt(req.body.positionIndex);
+          const colorIndex = parseInt(req.body.colorIndex);
+          // basically all POST endpoints but especially this one needs rate limiting
+          // allowing for 1 paint every 5 seconds the most frequency
+          postSessionPaint(
+            req.params.sessionHash,
+            req.body.identity,
+            req.body.revision,
+            req.body.signature,
+            positionIndex,
+            colorIndex
+          )
+            .then((updatedRevision) => {
+              // TODO: return ACK
+              // a signature to the request
+              // + time until next paint is allowed
+              res.sendStatus(200);
 
-    app.post(
-      `${BASE_URL}/sessions/:sessionHash/prompt`,
-      // we should use base64 eventually
-      bodyParser.urlencoded({ limit: 256, extended: true }),
-      (req, res) => {
-        const { text, signature, identity } = req.body;
-        // basically all POST endpoints need rate limiting
-        // prompts should not be allowed to be changed only every 5-10 seconds max
-        postSessionPrompt(req.params.sessionHash, identity, text, signature)
-          .then(async (newPrompt) => {
-            res.sendStatus(200);
-            if (newPrompt) {
               notify(
                 req.params.sessionHash,
-                "new-session-prompt",
-                newPrompt.prompt
+                "canvas-update",
+                encodeBase64(
+                  concat([
+                    new Uint8Array([colorIndex]),
+                    zeroPadValue(toBeArray(positionIndex), 4),
+                    updatedRevision,
+                  ])
+                )
               );
+            })
+            .catch((e) => processError(res, e));
+        }
+      );
 
-              if (newPrompt.isComplete) {
-                notify(req.params.sessionHash, "iteration-progress", "1");
+      app.post(
+        `${BASE_URL}/sessions/:sessionHash/prompt`,
+        // we should use base64 eventually
+        bodyParser.urlencoded({ limit: 256, extended: true }),
+        (req, res) => {
+          const { text, signature, identity } = req.body;
+          // basically all POST endpoints need rate limiting
+          // prompts should not be allowed to be changed only every 5-10 seconds max
+          postSessionPrompt(req.params.sessionHash, identity, text, signature)
+            .then(async (newPrompt) => {
+              res.sendStatus(200);
+              if (newPrompt) {
+                notify(
+                  req.params.sessionHash,
+                  "new-session-prompt",
+                  newPrompt.prompt
+                );
+
+                if (newPrompt.isComplete) {
+                  notify(req.params.sessionHash, "iteration-progress", "1");
+                }
+
+                return;
               }
 
-              return;
-            }
+              const message = JSON.stringify(
+                await getSessionPrompts(req.params.sessionHash)
+              );
+              notify(req.params.sessionHash, "new-prompt", message);
+            })
+            .catch((e) => processError(res, e));
+        }
+      );
 
-            const message = JSON.stringify(
-              await getSessionPrompts(req.params.sessionHash)
-            );
-            notify(req.params.sessionHash, "new-prompt", message);
-          })
-          .catch((e) => processError(res, e));
-      }
-    );
+      // TODO: this must be authorized
+      // need to login via signature, only allow painting from users who have identified themselves
+      // rate limiting will be based on this
+      // # of users * second
+      // 5 users need to wait for 5 seconds
+      // 100 users need to wait for a minute and a half
+      app.get(`${BASE_URL}/sessions/:sessionHash/updates`, (req, res) => {
+        if (connections.has(req.params.sessionHash)) {
+          connections.get(req.params.sessionHash)!.add(res);
+        } else {
+          connections.set(req.params.sessionHash, new Set([res]));
+        }
 
-    // TODO: this must be authorized
-    // need to login via signature, only allow painting from users who have identified themselves
-    // rate limiting will be based on this
-    // # of users * second
-    // 5 users need to wait for 5 seconds
-    // 100 users need to wait for a minute and a half
-    app.get(`${BASE_URL}/sessions/:sessionHash/updates`, (req, res) => {
-      if (connections.has(req.params.sessionHash)) {
-        connections.get(req.params.sessionHash)!.add(res);
-      } else {
-        connections.set(req.params.sessionHash, new Set([res]));
-      }
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
 
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        req.on("close", () => {
+          res.end();
+          const drawingConnections = connections.get(req.params.sessionHash);
+          if (!drawingConnections) return;
+          drawingConnections.delete(res);
+          if (drawingConnections.size === 0)
+            connections.delete(req.params.sessionHash);
+        });
       });
 
-      req.on("close", () => {
-        res.end();
-        const drawingConnections = connections.get(req.params.sessionHash);
-        if (!drawingConnections) return;
-        drawingConnections.delete(res);
-        if (drawingConnections.size === 0)
-          connections.delete(req.params.sessionHash);
-      });
-    });
+      app.use(express.static(`${PATH}/public`));
+      app.get("*", (req, res) =>
+        res.sendFile(
+          path.resolve("client", "build", `${PATH}/public/index.html`)
+        )
+      );
 
-    app.use(express.static(`${PATH}/public`));
-    app.get("*", (req, res) =>
-      res.sendFile(path.resolve("client", "build", `${PATH}/public/index.html`))
-    );
-
-    console.log(`up & running on port ${PORT}`);
-  }
-);
+      console.log(`up & running on port ${PORT}`);
+    }
+  );
 
 // only fill these in if you want to support identity generation
-const CONTRACT_ADDRESS =
-  process.env.CONTRACT_ADDRESS || "0xa42e4396529d29375f666cdd4636892385a13f29";
-
 // remaining endpoints
 // update profile
 // - email

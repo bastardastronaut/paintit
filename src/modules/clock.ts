@@ -19,8 +19,16 @@ export default class Clock {
   // basically setInterval
   interval(interval: number, maxIterations?: number) {}
 
+  atAuthWindow(authWindow: number) {
+    return this.at(authWindow << 4);
+  }
+
+  in(seconds: number) {
+    return this.at(this.now + seconds);
+  }
+
   at(timestamp: number) {
-    const promise = new Promise<void>((r) => {
+    return new Promise<void>((r) => {
       const arr: Array<() => void> = this.timers.get(timestamp) || [];
 
       arr.push(r);
@@ -30,8 +38,6 @@ export default class Clock {
       // to keep array sorted
       this.timers = new Map([...this.timers.entries()].sort());
     });
-
-    return promise;
   }
 
   timer(seconds: number) {

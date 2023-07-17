@@ -17,9 +17,11 @@ import GIFEncoder from "gifencoder";
 import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 
-const ITERATION_LENGTH = 3600;
+spellCheck('female squirting').then(r => console.log(r))
+
+const ITERATION_LENGTH = 10800;
 const ITERATION_COUNT = 5;
-const ITERATION_PAINT = 1000;
+const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution
 const BATCH_FRAMERATE_SECONDS = 10;
 const PROMPT_WORD_LENGTH = 5;
 const EXCLUDED = ["the", "a", "an"];
@@ -199,6 +201,10 @@ export default async (
     ]).then(([s, canvas, _finalCanvas, activityLog]) => {
       const finalCanvas = new Uint8Array(_finalCanvas);
       const canvasArray = new Uint8Array(canvas);
+
+      // also consider initial canvas in the calculation
+      //
+
       const contributions = new Map<string, number>();
       const historyLengths = new Map<number, number>();
 
@@ -506,7 +512,7 @@ export default async (
         .then((result) => result?.text || "");
     },
 
-    newPrompt: async (
+    processNewPrompt: async (
       sessionHash: string,
       identity: string,
       promptWord: string,
@@ -514,23 +520,22 @@ export default async (
     ) => {
       const text = promptWord.trim();
       const words = text.split(" ");
+      const session = await database.getSessionByHash(sessionHash);
+      if (!session) throw new BadRequestError();
+      const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
       if (
         words.length > 2 ||
         (words.length === 2 && !EXCLUDED.includes(words[0].toLowerCase())) ||
-        !(await spellCheck(text))
+        !(await spellCheck(newPrompt))
       )
         throw new BadRequestError("invalid prompt");
 
       // TODO: also verify signature, not needed for now as we don't reward participation in prompts
 
-      // 1.: check if prompt is valid (must be one word / the, a)
-
       lockedSessions.add(sessionHash);
 
       try {
         // load current session
-        const session = await database.getSessionByHash(sessionHash);
-        if (!session) throw new BadRequestError();
 
         const r = session.rows * session.columns;
         const consensusRequirement = Math.round(
@@ -551,8 +556,6 @@ export default async (
           matchingPrompts.matchCount >= consensusRequirement - 1
         ) {
           // proceed with completion
-
-          const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
 
           const isComplete =
             session.prompt

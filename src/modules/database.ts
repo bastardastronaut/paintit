@@ -15,10 +15,15 @@ export type Session = {
 
 export type Transaction = {
   amount: number;
-  withdrawal_id: string;
   created_at: number;
   identity: string;
   message: string;
+};
+
+export type Withdrawal = {
+  amount: number;
+  withdrawal_id: string;
+  identity: string;
 };
 
 export type SessionPaint = {
@@ -349,6 +354,7 @@ ORDER BY created_at ASC`
         // need to keep track of withdrawals
         // ART is accumulated here and signatures are distributed freely until withdrawal
 
+        // will need something like bidding, or let just people do it on opensea?
         this.db.run(
           "CREATE TABLE IF NOT EXISTS draw_votes (hash TEXT, value INTEGER, identity TEXT, signature TEXT, PRIMARY KEY(hash, identity))"
         );

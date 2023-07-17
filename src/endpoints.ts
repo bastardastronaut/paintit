@@ -1,4 +1,6 @@
 import {
+  Signature,
+  encodeBase64,
   zeroPadValue,
   toBeArray,
   getBytes,
@@ -12,6 +14,7 @@ import {
 import Database from "./modules/database";
 import FileSystem from "./modules/filesystem";
 import Clock from "./modules/clock";
+import Contract from "./modules/contract";
 import Paint from "./modules/paint";
 import { NotFoundError, BadRequestError } from "./errors";
 import Account from "./modules/account";
@@ -22,11 +25,14 @@ export default async (
   database: Database,
   filesystem: FileSystem,
   paint: Paint,
-  clock: Clock
+  clock: Clock,
+  contract: Contract
 ) => {
   const account = await Account(database);
   const session = await Session(database, paint, filesystem, clock);
-  const transactions = await Transactions(database)
+  const transactions = await Transactions(database, contract);
+
+  const expiredSignatures = new Set<string>();
 
   return {
     // always consider replay attacks in these
@@ -70,7 +76,7 @@ export default async (
       signature: string
       // TODO: need to make sure that latest prompt is registered
       // revision: string,
-    ) => session.newPrompt(hash, identity, prompt, signature),
+    ) => session.processNewPrompt(hash, identity, prompt, signature),
 
     // TODO: static data validation and sanitization
 
@@ -120,6 +126,30 @@ export default async (
       token: string,
       signature: string
     ) => {},
+
+    requestWithdrawal: async (signature: string, _amount: string) => {
+      if (expiredSignatures.has(signature))
+        throw new BadRequestError("signature expired");
+
+      const amount = parseInt(_amount)
+
+      const message = getBytes(
+        concat([
+          zeroPadValue(toBeArray(clock.authWindow), 4),
+          zeroPadValue(toBeArray(amount), 32),
+        ])
+      );
+
+      const identity = verifyMessage(message, signature);
+
+      expiredSignatures.add(signature);
+
+      clock.atAuthWindow(clock.authWindow + 1).then(() => {
+        expiredSignatures.delete(signature);
+      });
+
+      return transactions.requestWithdrawal(identity, amount);
+    },
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
   };

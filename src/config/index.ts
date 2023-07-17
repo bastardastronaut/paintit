@@ -1,16 +1,12 @@
 import localConfig from "./local";
 import productionConfig from "./production";
+import abi from "./contractABI.json";
 
 let config: {
-  rzrSocket: {
-    signalServerUrl: string;
-    rtc: {
-      iceServers: Array<{
-        urls: string;
-      }>;
-    };
-  };
   ethereum: {
+    chainId: number;
+    contractAddress: string;
+    key: string;
   };
 };
 
@@ -20,4 +16,4 @@ if (process.env.NODE_ENV === "production") {
   config = localConfig;
 }
 
-export default config;
+export default { ...config, ethereum: { ...config.ethereum, abi } };

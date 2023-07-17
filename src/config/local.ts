@@ -1,27 +1,8 @@
-
 const config = {
-  rzrSocket: {
-    signalServerUrl: "ws://localhost:8081",
-    rtc: {
-      iceServers: [
-        {
-          urls: "stun:openrelay.metered.ca:80",
-        },
-        {
-          urls: "turn:openrelay.metered.ca:443?transport=tcp",
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        },
-        /*
-    {
-      urls: "stun:openrelay.metered.ca:80",
-    },*/
-      ],
-    },
-  },
   ethereum: {
-    contracts: {
-    },
+    chainId: 11155111,
+    contractAddress: '0x55dac53db93f253cf54f1279c4d62903b6a1f355',
+    key: 'https://sepolia.infura.io/v3/e68ca51991a645f7bf0b664f010072d5'
   },
 };
 

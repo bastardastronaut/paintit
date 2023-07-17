@@ -1,4 +1,8 @@
+import { sha256, dataSlice } from "ethers";
+import { BadRequestError } from "../errors";
+
 import Database from "./database";
+import Contract from "./contract";
 
 const averagePerPersonRewardYesterday = 50;
 const rewardCap = 10000;
@@ -8,7 +12,7 @@ const rewardCap = 10000;
 // is there a queue?
 // transactions are batched every 4 hours
 
-export default (database: Database) => {
+export default (database: Database, contract: Contract) => {
   // this is the transactions backend.
   // keeps track of daily rewards, and limits them.
   //
@@ -52,7 +56,6 @@ export default (database: Database) => {
   //
   //
 
-
   // withdraw receipts.
   // keep getting larger and larger but only can be used once
 
@@ -68,5 +71,38 @@ export default (database: Database) => {
           message: t.message,
         }))
       ),
+
+    requestWithdrawal: (identity: string, amount: number) =>
+      Promise.all([
+        contract.getWithdrawals(identity),
+        contract.getDeposits(identity),
+        database.getActiveTransactions(identity),
+      ])
+        .then(([withdrawals, deposits, transactions]) => {
+          const allowance =
+            transactions.reduce((acc, tx) => acc + tx.amount, 0) +
+            deposits.reduce((acc, i) => acc + parseInt(i), 0) -
+            withdrawals.reduce((acc, i) => acc + parseInt(i), 0);
+
+          let _withdrawalId = sha256(identity);
+          for (let i = 0; i < withdrawals.length; ++i) {
+            _withdrawalId = sha256(_withdrawalId);
+          }
+
+          if (amount > allowance) {
+            throw new BadRequestError("Amount exceeds account balance");
+          }
+
+          const withdrawalId = dataSlice(_withdrawalId, 0, 8);
+
+          return Promise.all([
+            Promise.resolve(withdrawalId),
+            contract.signTransaction(identity, withdrawalId, amount),
+          ]);
+        })
+        .then(([withdrawalId, signature]) => ({
+          signature,
+          withdrawalId,
+        })),
   };
 };
