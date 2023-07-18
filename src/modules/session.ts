@@ -17,8 +17,6 @@ import GIFEncoder from "gifencoder";
 import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 
-spellCheck('female squirting').then(r => console.log(r))
-
 const ITERATION_LENGTH = 10800;
 const ITERATION_COUNT = 5;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution
@@ -39,11 +37,54 @@ const DIMENSIONS = [
 // for POC
 //const DIMENSIONS = [[16, 16]];
 const DIMENSIONS = [
-  [16, 16],
-  [32, 24],
-  [64, 48],
-  [24, 32],
-  [48, 64],
+  [[16, 16]], // TODO: for testing purposes only
+
+  [
+    [32, 24],
+    [24, 32],
+  ],
+
+  [
+    [64, 48],
+    [48, 64],
+    [48, 72],
+  ],
+
+  [
+    [96, 72],
+    [72, 96],
+    [72, 108],
+  ],
+
+  [
+    [128, 96],
+    [96, 128],
+    [96, 144],
+  ],
+
+  [
+    [192, 144],
+    [144, 192],
+    [144, 216],
+  ],
+
+  [
+    [256, 192],
+    [192, 256],
+    [192, 288],
+  ],
+
+  [
+    [384, 288],
+    [288, 384],
+    [288, 432],
+  ],
+
+  [
+    [512, 384],
+    [384, 512],
+    [384, 576],
+  ],
 ];
 
 // randomize all things
@@ -52,11 +93,21 @@ const DIMENSIONS = [
 
 // this'll be only for free lobbies
 // for premium ones, paint will be generated after participation is confirmed
-const DEFAULT_PAINT = 1000;
+const DEFAULT_PAINT = 2500;
 
 type RevisionCacheEntry = {
   revision: string;
   positionIndex: number;
+};
+
+const getSize = (columns: number, rows: number) => {
+  for (let size = 0; size < DIMENSIONS.length; ++size) {
+    for (const dimensions of DIMENSIONS[size]) {
+      if (dimensions[0] === columns && dimensions[1] === rows) return size;
+    }
+  }
+
+  return 0;
 };
 
 const getColorDiff = (paletteIndex: number, color1: number, color2: number) =>
@@ -105,9 +156,9 @@ export default async (
   // TODO: also needs to be session hash based
 
   //const scheduleDrawingGeneration = async (): Promise<number> => {
-  const generateDrawing = async (): Promise<void> => {
+  const generateDrawing = async (size: number): Promise<void> => {
     const [columns, rows] =
-      DIMENSIONS[Math.floor(Math.random() * DIMENSIONS.length)];
+      DIMENSIONS[size][Math.floor(Math.random() * DIMENSIONS[size].length)];
     const paletteIndex = Math.floor(Math.random() * palettes.length);
     const canvas = paint.generateDrawing(
       palettes[paletteIndex],
@@ -122,35 +173,6 @@ export default async (
       database.insertSession(hash, columns, rows, paletteIndex),
       filesystem.saveFile(canvas),
     ]);
-
-    /*
-    const session = await database.getSessionByHash(hash);
-
-    return session!.created_at;
-
-    // so actuallly
-    // prompt doesn't actually count as iteration in that it is not fixed length
-    // rather, it takes time foom the first iteration
-    // 36, 36
-    /*
-    return clock
-      .at(session!.created_at + ITERATION_LENGTH)
-      .then(() => {
-        return database.progressSession(hash, 1);
-      })
-      .then(() => {
-        return database.getSessionByHash(hash);
-      })
-      .then((_session) => {
-        if (!_session) throw new Error("not found");
-        return clock.at(_session.iteration_started_at + ITERATION_LENGTH);
-      })
-      .then(() => {
-        // currently this is the end of the drawing
-        return database.progressSession(hash, 2);
-      })
-      .then(() => scheduleDrawingGeneration());
-      */
   };
 
   const loadSession = (sessionHash: string) => {
@@ -251,6 +273,12 @@ export default async (
           }))
         )
       )
+      .then(() => database.getActiveSessions())
+      .then((sessions) => {
+        if (sessions.length >= 3) return null;
+        const nextSize = getSize(s.columns, s.rows) - 2;
+        return generateDrawing(nextSize > 0 ? nextSize : 0);
+      })
       .then(() => null);
   };
 
@@ -284,7 +312,7 @@ export default async (
   }
 
   if (currentSessions.length === 0) {
-    await generateDrawing();
+    await generateDrawing(0);
   }
 
   return {
@@ -503,7 +531,7 @@ export default async (
     loadSessionPaint: (sessionHash: string, identity: string) => {
       return database
         .getUserSessionPaint(sessionHash, identity)
-        .then((result) => result?.paint || DEFAULT_PAINT);
+        .then((result) => (result === null ? DEFAULT_PAINT : result.paint));
     },
 
     loadSessionPromptByIdentity: (sessionHash: string, identity: string) => {
@@ -563,26 +591,40 @@ export default async (
               .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length ===
             PROMPT_WORD_LENGTH - 1;
 
+          const duration = clock.now - session.iteration_started_at;
+
           await database.updateSessionPrompt(
             sessionHash,
             newPrompt,
             isComplete
           );
 
+          const currentSize = getSize(session.columns, session.rows);
+
+          const nextSize =
+            duration < ITERATION_LENGTH
+              ? currentSize + 1
+              : duration > 2 * ITERATION_LENGTH
+              ? currentSize - 1
+              : currentSize;
+
           if (isComplete) {
-            // MVP policy
+            // TODO: only if currently active sessions length is < 10
             const [s] = await Promise.all([
               database.getSessionByHash(sessionHash),
-              generateDrawing(),
+              generateDrawing(
+                nextSize >= DIMENSIONS.length
+                  ? DIMENSIONS.length - 1
+                  : nextSize < 0
+                  ? 0
+                  : nextSize
+              ),
             ]);
 
-            clock.at(s!.iteration_started_at + ITERATION_LENGTH).then(() => {
-              // this is basically finish in MVP
-              return progressSession(s as Session);
-            });
+            clock
+              .at(s!.iteration_started_at + ITERATION_LENGTH)
+              .then(() => progressSession(s as Session));
           }
-
-          // need to wait for the previous to finish successfully
 
           await database.deleteSessionPrompts(sessionHash);
 

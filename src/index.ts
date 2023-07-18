@@ -122,7 +122,7 @@ Promise.all([database.initialize(), contract.initialize()])
       app.get(`${BASE_URL}/archived-sessions`, (req, res) => {
         // TODO: watch for SQL injection!
         getArchivedSessions(
-          parseInt(req.query.limit as string) || 3,
+          parseInt(req.query.limit as string) || 5,
           parseInt(req.query.offset as string) || 0
         )
           .then((result) => res.send(result))
@@ -164,13 +164,13 @@ Promise.all([database.initialize(), contract.initialize()])
 
       app.get(`${BASE_URL}/sessions/:sessionHash/contributions`, (req, res) => {
         return getSessionContributions(req.params.sessionHash)
-          .then((prompts) => res.send(prompts))
+          .then((contributions) => res.send(contributions.slice(0, 10)))
           .catch((e) => processError(res, e));
       });
 
       app.get(`${BASE_URL}/sessions/:sessionHash/prompts`, (req, res) => {
         return getSessionPrompts(req.params.sessionHash)
-          .then((prompts) => res.send(prompts))
+          .then((prompts) => res.send(prompts.slice(0, 10)))
           .catch((e) => processError(res, e));
       });
 

@@ -18,12 +18,22 @@ const getDictionary = (dict: string) =>
 export default (promptText: string): Promise<boolean> =>
   Promise.all([getDictionary("en-GB"), getDictionary("en-US")]).then(
     ([ukDict, usDict]: any[]) => {
+      const words = promptText.toLowerCase().split(" ");
+
       for (const f of FORBIDDEN_COMBINATIONS) {
-        if (!f) continue
-        if (promptText.toLowerCase().includes(f)) return false;
+        if (!f) continue;
+
+        if (promptText.toLowerCase().includes(f)) {
+          const expression = f.split(" ");
+          // basically check if all words in f are also in words
+          // just make sets of the words and intersect them see if they have the words
+
+          if (expression.every((w) => words.find((_w) => _w === w)))
+            return false;
+        }
       }
 
-      for (const word of promptText.split(" ")) {
+      for (const word of words) {
         if (!ukDict.spellCheck(word) && !usDict.spellCheck(word)) return false;
       }
 
