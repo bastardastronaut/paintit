@@ -30,6 +30,7 @@ const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
 
 const connections = new Map<string, Set<Response>>();
+const blockedUsers = new Set<string>();
 
 const notify = (hash: string, event: string, message: string) => {
   const responses = connections.get(hash);
@@ -252,10 +253,10 @@ Promise.all([database.initialize(), contract.initialize()])
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
         (req, res) => {
+          if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);
           const positionIndex = parseInt(req.body.positionIndex);
           const colorIndex = parseInt(req.body.colorIndex);
-          // basically all POST endpoints but especially this one needs rate limiting
-          // allowing for 1 paint every 5 seconds the most frequency
+
           postSessionPaint(
             req.params.sessionHash,
             req.body.identity,
@@ -264,11 +265,22 @@ Promise.all([database.initialize(), contract.initialize()])
             positionIndex,
             colorIndex
           )
-            .then((updatedRevision) => {
+            .then(({ updatedRevision, paintCost, paintLeft }) => {
               // TODO: return ACK
               // a signature to the request
               // + time until next paint is allowed
-              res.sendStatus(200);
+              const userCount =
+                connections.get(req.params.sessionHash)?.size || 1;
+              const timeout =
+                (Math.ceil(userCount / 3) * 2500 * paintCost) / 100;
+
+              blockedUsers.add(req.body.identity);
+              setTimeout(() => blockedUsers.delete(req.body.identity), timeout);
+
+              res.send({
+                paintLeft,
+                timeout,
+              });
 
               notify(
                 req.params.sessionHash,

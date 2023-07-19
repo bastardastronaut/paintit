@@ -180,12 +180,12 @@ export default async (
       if (!s) throw new Error("session loading failed");
 
       const missingWordCount =
-        s.current_iteration === 0
+        s.current_iteration === 0 && s.prompt
           ? PROMPT_WORD_LENGTH -
             s.prompt
               .split(" ")
               .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length
-          : 0;
+          : PROMPT_WORD_LENGTH;
 
       return {
         missingWordCount,
@@ -447,10 +447,8 @@ export default async (
       return Promise.all([
         loadSession(sessionHash),
         filesystem.loadFile(sessionHash),
-        loadSessionCanvas(sessionHash),
         database.getActivityByDrawing(sessionHash),
-      ]).then(([s, canvas, _finalCanvas, activityLog]) => {
-        const finalCanvas = new Uint8Array(_finalCanvas);
+      ]).then(([s, canvas, activityLog]) => {
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
@@ -815,7 +813,7 @@ export default async (
 
           revisionCaches.set(sessionHash, revisionCache);
 
-          return updatedRevision;
+          return { updatedRevision, paintCost, paintLeft };
         });
       } finally {
         console.log(`unlocked after ${new Date().getTime() - lockedAt}`);
