@@ -333,7 +333,7 @@ ORDER BY created_at ASC`
         );
 
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS draw_activity (hash TEXT, identity TEXT, revision TEXT, position_index INTEGER, color_index INTEGER, iteration INTEGER, created_at INTEGER, PRIMARY KEY (hash, identity, revision))"
+          "CREATE TABLE IF NOT EXISTS draw_activity (hash TEXT, identity TEXT, revision TEXT, position_index INTEGER, color_index INTEGER, iteration INTEGER, created_at INTEGER, PRIMARY KEY (hash, identity, revision, created_at))"
         );
 
         // to store signatures from each user

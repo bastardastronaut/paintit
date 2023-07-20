@@ -180,7 +180,7 @@ export default async (
   const loadSession = (sessionHash: string) => {
     return database.getSessionByHash(sessionHash).then((s) => {
       if (!s) throw new Error("session loading failed");
-      const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH
+      const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH;
 
       const missingWordCount =
         s.current_iteration === 0 && s.prompt
@@ -200,7 +200,7 @@ export default async (
         iterationStartedAt: s.iteration_started_at,
         iterationEndsAt: s.iteration_started_at + ITERATION_LENGTH,
         revision: s.revision,
-        promptSize, 
+        promptSize,
         prompt: s.prompt,
         maxIterations: ITERATION_COUNT,
       };
@@ -770,17 +770,19 @@ export default async (
           const match = revisionCache[matchIndex];
           let isDrawSpaceViolated = false;
 
-          while (!isDrawSpaceViolated && matchIndex < revisionCache.length) {
+          if (!match) throw new BadRequestError("revision mismatch");
+
+          while (!isDrawSpaceViolated && ++matchIndex < revisionCache.length) {
             isDrawSpaceViolated =
               getDistance(
                 session.columns,
-                revisionCache[matchIndex++].positionIndex,
+                revisionCache[matchIndex].positionIndex,
                 positionIndex
               ) < 3;
           }
 
-          if (!match || isDrawSpaceViolated) {
-            throw new BadRequestError("revision mismatch");
+          if (isDrawSpaceViolated) {
+            throw new BadRequestError("draw space violation");
           }
         }
 
