@@ -253,7 +253,10 @@ Promise.all([database.initialize(), contract.initialize()])
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
         (req, res) => {
+          const set = connections.get(req.params.sessionHash)
           if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);
+          if (!set) return res.sendStatus(404);
+
           const positionIndex = parseInt(req.body.positionIndex);
           const colorIndex = parseInt(req.body.colorIndex);
 
@@ -339,8 +342,14 @@ Promise.all([database.initialize(), contract.initialize()])
       // 5 users need to wait for 5 seconds
       // 100 users need to wait for a minute and a half
       app.get(`${BASE_URL}/sessions/:sessionHash/updates`, (req, res) => {
+        // need to have signature and verify user, do we ?
         if (connections.has(req.params.sessionHash)) {
-          connections.get(req.params.sessionHash)!.add(res);
+          const set = connections.get(req.params.sessionHash) as Set<Response>;
+
+          if (set.size > 100)
+            return res.sendStatus(429)
+
+          set.add(res);
         } else {
           connections.set(req.params.sessionHash, new Set([res]));
         }

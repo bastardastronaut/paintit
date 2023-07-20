@@ -21,7 +21,7 @@ const ITERATION_LENGTH = 10800;
 const ITERATION_COUNT = 5;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution
 const BATCH_FRAMERATE_SECONDS = 10;
-const PROMPT_WORD_LENGTH = 5;
+const DEFAULT_PROMPT_WORD_LENGTH = 5;
 const EXCLUDED = ["the", "a", "an"];
 
 /*
@@ -169,8 +169,10 @@ export default async (
 
     const hash = sha256(canvas);
 
+    const promptSize = 3 + Math.floor(Math.random() * 5);
+
     await Promise.all([
-      database.insertSession(hash, columns, rows, paletteIndex),
+      database.insertSession(hash, columns, rows, paletteIndex, promptSize),
       filesystem.saveFile(canvas),
     ]);
   };
@@ -178,14 +180,15 @@ export default async (
   const loadSession = (sessionHash: string) => {
     return database.getSessionByHash(sessionHash).then((s) => {
       if (!s) throw new Error("session loading failed");
+      const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH
 
       const missingWordCount =
         s.current_iteration === 0 && s.prompt
-          ? PROMPT_WORD_LENGTH -
+          ? promptSize -
             s.prompt
               .split(" ")
               .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length
-          : PROMPT_WORD_LENGTH;
+          : promptSize;
 
       return {
         missingWordCount,
@@ -197,6 +200,7 @@ export default async (
         iterationStartedAt: s.iteration_started_at,
         iterationEndsAt: s.iteration_started_at + ITERATION_LENGTH,
         revision: s.revision,
+        promptSize, 
         prompt: s.prompt,
         maxIterations: ITERATION_COUNT,
       };
@@ -546,7 +550,7 @@ export default async (
     ) => {
       const text = promptWord.trim();
       const words = text.split(" ");
-      const session = await database.getSessionByHash(sessionHash);
+      const session = await loadSession(sessionHash);
       if (!session) throw new BadRequestError();
       const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
       if (
@@ -568,7 +572,7 @@ export default async (
           (Math.log(r) / Math.log(2)) * (r / 16384)
         );
 
-        if (session.current_iteration > 0)
+        if (session.iteration > 0)
           throw new BadRequestError("session prompt completed");
 
         const matchingPrompts = await database.getMatchingPrompts(
@@ -587,9 +591,9 @@ export default async (
             session.prompt
               .split(" ")
               .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length ===
-            PROMPT_WORD_LENGTH - 1;
+            session.promptSize - 1;
 
-          const duration = clock.now - session.iteration_started_at;
+          const duration = clock.now - session.iterationStartedAt;
 
           await database.updateSessionPrompt(
             sessionHash,

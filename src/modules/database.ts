@@ -1,6 +1,7 @@
 import { verbose, Database as SQLiteDatabse } from "sqlite3";
 
 export type Session = {
+  prompt_word_length: number;
   session_type: number;
   hash: string;
   revision: string;
@@ -152,10 +153,11 @@ export default class Database {
     hash: string,
     rows: number,
     columns: number,
-    paletteIndex: number
+    paletteIndex: number,
+    promptSize: number
   ) {
     return this.upsert(
-      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette_index, current_iteration, iteration_started_at, created_at, prompt) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, ${paletteIndex}, 0, unixepoch(), unixepoch(), '')`
+      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette_index, current_iteration, iteration_started_at, created_at, prompt, prompt_word_length) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, ${paletteIndex}, 0, unixepoch(), unixepoch(), '', ${promptSize})`
     );
   }
 
