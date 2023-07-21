@@ -554,6 +554,7 @@ export default async (
       if (!session) throw new BadRequestError();
       const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
       if (
+        words.length === 1 && EXCLUDED.includes(words[0].toLowerCase()) ||
         words.length > 2 ||
         (words.length === 2 && !EXCLUDED.includes(words[0].toLowerCase())) ||
         !(await spellCheck(newPrompt))
