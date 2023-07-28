@@ -5,7 +5,9 @@ import {
   verifyMessage,
   toBeArray,
   getBytes,
+  randomBytes,
 } from "ethers";
+import { readFileSync } from "fs";
 import chroma from "chroma-js";
 import Database, { Activity, Session } from "./database";
 import Clock from "./clock";
@@ -16,6 +18,7 @@ import { NotFoundError, BadRequestError } from "../errors";
 import GIFEncoder from "gifencoder";
 import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
+import { getDistance } from "./utils";
 
 const ITERATION_LENGTH = 10800;
 const ITERATION_COUNT = 5;
@@ -123,22 +126,6 @@ const getPaintCost = (
     Math.pow(1.1, historyLength) *
       getColorDiff(paletteIndex, colorFrom, colorTo)
   );
-};
-
-const getDistance = (
-  columns: number,
-  positionIndex1: number,
-  positionIndex2: number
-): number => {
-  const x1 = positionIndex1 % columns;
-  const x2 = positionIndex2 % columns;
-
-  const y1 = Math.floor(positionIndex1 / columns);
-  const y2 = Math.floor(positionIndex2 / columns);
-
-  const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-
-  return distance;
 };
 
 export default async (
@@ -545,6 +532,92 @@ export default async (
     processNewPrompt: async (
       sessionHash: string,
       identity: string,
+      _prompt: string,
+      signature: string
+    ) => {
+      const prompt = _prompt.trim();
+      const words = prompt.split(" ");
+      if (
+        words.length > 5 ||
+        prompt.length > 32 ||
+        !(await spellCheck(prompt))
+      ) {
+        throw new BadRequestError("invalid prompt");
+      }
+
+      const session = await loadSession(sessionHash);
+
+      if (session.iteration > 0)
+        throw new BadRequestError("session prompt completed");
+
+      lockedSessions.add(sessionHash);
+
+      try {
+        const r = session.rows * session.columns;
+        const consensusRequirement = Math.round(
+          (Math.log(r) / Math.log(2)) * (r / 16384)
+        );
+
+        const matchingPrompts = await database.getMatchingPrompts(
+          sessionHash,
+          prompt
+        );
+
+        const isComplete =
+          (matchingPrompts?.matchCount || 0) >= consensusRequirement - 1;
+
+        const duration = clock.now - session.iterationStartedAt;
+        const currentSize = getSize(session.columns, session.rows);
+
+        const nextSize =
+          duration < ITERATION_LENGTH
+            ? currentSize + 1
+            : duration > 2 * ITERATION_LENGTH
+            ? currentSize - 1
+            : currentSize;
+
+        if (isComplete) {
+          await database.updateSessionPrompt(sessionHash, prompt, isComplete);
+          await database.deleteSessionPrompts(sessionHash);
+          const promptSessions = await database.getPromptSessions();
+
+          if (promptSessions.length > 0) return true;
+
+          // only if there are no other sessions in prompt phase
+          // TODO: only if currently active sessions length is < 10
+          const [s] = await Promise.all([
+            database.getSessionByHash(sessionHash),
+            generateDrawing(
+              nextSize >= DIMENSIONS.length
+                ? DIMENSIONS.length - 1
+                : nextSize < 0
+                ? 0
+                : nextSize
+            ),
+          ]);
+
+          clock
+            .at(s!.iteration_started_at + ITERATION_LENGTH)
+            .then(() => progressSession(s as Session));
+
+          return true;
+        }
+        await database.insertSessionPrompt(
+          sessionHash,
+          identity,
+          prompt,
+          signature
+        );
+
+        return false;
+      } finally {
+        lockedSessions.delete(sessionHash);
+      }
+    },
+
+    _processNewPrompt: async (
+      sessionHash: string,
+      identity: string,
       promptWord: string,
       signature: string
     ) => {
@@ -554,20 +627,20 @@ export default async (
       if (!session) throw new BadRequestError();
       const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
       if (
-        words.length === 1 && EXCLUDED.includes(words[0].toLowerCase()) ||
+        (words.length === 1 && EXCLUDED.includes(words[0].toLowerCase())) ||
         words.length > 2 ||
         (words.length === 2 && !EXCLUDED.includes(words[0].toLowerCase())) ||
         !(await spellCheck(newPrompt))
       )
         throw new BadRequestError("invalid prompt");
 
+      lockedSessions.add(sessionHash);
+
       // TODO: also verify signature, not needed for now as we don't reward participation in prompts
 
       lockedSessions.add(sessionHash);
 
       try {
-        // load current session
-
         const r = session.rows * session.columns;
         const consensusRequirement = Math.round(
           (Math.log(r) / Math.log(2)) * (r / 16384)

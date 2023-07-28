@@ -665,3 +665,7 @@ while (colorMap.size === 0 || bestProximity > 14) {
 }
 
 console.log(" -- done --");
+
+
+
+

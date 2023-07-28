@@ -135,9 +135,9 @@ const rotateRow = (
 
 export default (clock: Clock, database: Database, paint: Paint) => {
   const generateCaptcha5 = (identity: string) => {
-    // const fileName = `captcha${Math.floor(Math.random() * 8 + 1)}.txt`
-    const filename = "captcha9.txt";
-    const captchaData = readFileSync(`./src/modules/${filename}`)
+    const captchaData = readFileSync(
+      `./src/modules/captcha${Math.floor(Math.random() * 7 + 1)}.txt`
+    )
       .toString()
       .split("\n")
       .map(processLine)
@@ -426,7 +426,7 @@ export default (clock: Clock, database: Database, paint: Paint) => {
     // well, still need to draw..
     const buildTrajectory = (
       columnRotations: number[],
-      rowRotations: number[]
+      rowRotations: number[],
     ) => {
       console.log(columnRotations, rowRotations);
       const trajectory = new Map<number, number[]>();
@@ -434,7 +434,7 @@ export default (clock: Clock, database: Database, paint: Paint) => {
       console.log(trajectory);
     };
 
-    buildTrajectory(columnRotations, rowRotations);
+    buildTrajectory(columnRotations, rowRotations)
 
     /*
     captchas2.set(challengeId, {

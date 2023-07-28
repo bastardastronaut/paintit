@@ -28,12 +28,13 @@ export default async (
   clock: Clock,
   contract: Contract
 ) => {
-  const account = await Account(database);
+  const account = await Account(clock, database, paint);
   const session = await Session(database, paint, filesystem, clock);
   const transactions = await Transactions(database, contract);
 
   const expiredSignatures = new Set<string>();
 
+  // actually this should be a middleware
   return {
     // always consider replay attacks in these
     // it's probably safest to always only allow one request/account
@@ -106,11 +107,8 @@ export default async (
       transactions.loadTransactions(identity),
 
     // token should defend against replay
-    registerAccount: (identity: string, token: string) => {
-      // verify signature
-      // verify captcha token
-      return account.createAccount(identity);
-    },
+    registerAccount: (identity: string) =>
+      account.requestAccountCreation(identity),
 
     linkAccount: (
       identity: string,
@@ -131,7 +129,7 @@ export default async (
       if (expiredSignatures.has(signature))
         throw new BadRequestError("signature expired");
 
-      const amount = parseInt(_amount)
+      const amount = parseInt(_amount);
 
       const message = getBytes(
         concat([
@@ -152,5 +150,14 @@ export default async (
     },
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
+    retrieveCaptchaChallenge: (challengeId: string) =>
+      account.retrieveCaptchaChallenge(challengeId),
+    retrieveCaptchaTarget: (challengeId: string) =>
+      account.retrieveCaptchaTarget(challengeId),
+    solveCaptcha: (challengeId: string, solution: number) =>
+      account.solveCaptcha(challengeId, solution),
+    generateCaptcha: () => account.generateCaptcha2(),
+    generateCaptcha2: () => account.generateCaptcha4(),
+    //generateCaptcha3: () => account.generateCaptcha5(),
   };
 };

@@ -258,6 +258,12 @@ export default class Database {
     );
   }
 
+  getPromptSessions(): Promise<Session[]> {
+    return this.getAll(
+      `SELECT * FROM sessions WHERE current_iteration == 0 ORDER BY created_at DESC`
+    );
+  }
+
   getActiveTransactions(identity: string): Promise<Transaction[]> {
     return this.getAll(
       `SELECT * FROM transactions WHERE withdrawal_id is NULL AND identity='${identity}' ORDER BY created_at DESC`

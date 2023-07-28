@@ -8,9 +8,6 @@ type NoiseAlgorithm = (
   palette: string[]
 ) => Uint8Array;
 
-// we can actually pick any 16 colors
-const NOISE_PALETTE_SIZE = 16;
-
 const noiseAlgorithms: NoiseAlgorithm[] = [
   (rows, columns, palette) => {
     const canvas = new Uint8Array(rows * columns);
@@ -18,7 +15,7 @@ const noiseAlgorithms: NoiseAlgorithm[] = [
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < columns; j++) {
         canvas[i * columns + j] = Math.floor(
-          Math.random() * NOISE_PALETTE_SIZE
+          Math.random() * palette.length
         );
       }
     }
@@ -27,7 +24,7 @@ const noiseAlgorithms: NoiseAlgorithm[] = [
   },
 
   (rows, columns, palette) => {
-    const colorMap = [...new Array(NOISE_PALETTE_SIZE)].map((_, i) =>i
+    const colorMap = [...new Array(palette.length)].map((_, i) =>i
       //Math.floor(Math.random() * 128)
     );
     const controlPoints = [
@@ -58,14 +55,14 @@ const noiseAlgorithms: NoiseAlgorithm[] = [
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < columns; j++) {
         canvas[i * columns + j] = Math.floor(
-          Math.random() * NOISE_PALETTE_SIZE
+          Math.random() * palette.length
         );
       }
     }
 
     for (const controlPoint of controlPoints) {
       canvas[controlPoint] =
-        colorMap[Math.floor(Math.random() * NOISE_PALETTE_SIZE)];
+        colorMap[Math.floor(Math.random() * palette.length)];
       const row = Math.floor(controlPoint / columns);
       const column = controlPoint % columns;
 
@@ -77,7 +74,7 @@ const noiseAlgorithms: NoiseAlgorithm[] = [
             Math.sqrt(Math.pow(rows, 2) + Math.pow(columns, 2));
 
           const color =
-            colorMap[Math.floor(Math.random() * NOISE_PALETTE_SIZE)];
+            colorMap[Math.floor(Math.random() * palette.length)];
           const colorDistance = colorDiff(color, canvas[controlPoint]) / 100;
 
           const commitment = distance * colorDistance * 255;
