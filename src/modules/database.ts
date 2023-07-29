@@ -47,6 +47,11 @@ export enum SessionType {
   ULTIMATE,
 }
 
+export enum CaptchaAttemptOutcome {
+  SUCCESS,
+  FAILURE,
+}
+
 type Signals = {
   onIterationProgress: (hash: string, iteration: number) => void;
 };
@@ -108,6 +113,18 @@ export default class Database {
   insertUser(accountId: string) {
     return this.upsert(
       `INSERT INTO users (identity, account_id, tokens, created_at) VALUES('${accountId}', '${accountId}', 0, unixepoch())`
+    );
+  }
+
+  insertCaptchaAttempt(filename: string, identity: string, outcome: CaptchaAttemptOutcome) {
+    return this.upsert(
+      `INSERT INTO captcha_attempts (filename, identity, outcome) VALUES('${filename}', '${identity}', ${outcome})`
+    );
+  }
+
+  loadCaptchaAttempts(filename: string) {
+    return this.getAll(
+      `SELECT * FROM captcha_attempts WHERE filename == '${filename}'`
     );
   }
 
@@ -357,6 +374,10 @@ ORDER BY created_at ASC`
 
         this.db.run(
           "CREATE TABLE IF NOT EXISTS session_prompts (hash TEXT, text TEXT, identity TEXT, signature TEXT, PRIMARY KEY(hash, identity))"
+        );
+
+        this.db.run(
+          "CREATE TABLE IF NOT EXISTS captcha_attempts (filename TEXT, identity TEXT, outcome NUMBER)"
         );
 
         // need to keep track of withdrawals

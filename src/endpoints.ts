@@ -150,14 +150,25 @@ export default async (
     },
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
-    retrieveCaptchaChallenge: (challengeId: string) =>
-      account.retrieveCaptchaChallenge(challengeId),
-    retrieveCaptchaTarget: (challengeId: string) =>
-      account.retrieveCaptchaTarget(challengeId),
     solveCaptcha: (challengeId: string, solution: number) =>
       account.solveCaptcha(challengeId, solution),
-    generateCaptcha: () => account.generateCaptcha2(),
-    generateCaptcha2: () => account.generateCaptcha4(),
-    //generateCaptcha3: () => account.generateCaptcha5(),
+
+    captchaGameGenerate: account.generateCaptchaAttempt,
+    captchaGameSolve: (
+      identity: string,
+      solution: number,
+      signature: string
+    ) => {
+      // this is obviously not good enough, need to know challenge id
+      // susceptible to replay attacks
+      if (
+        identity !==
+        verifyMessage(concat([identity, new Uint8Array([solution])]), signature)
+      ) {
+        throw new BadRequestError("invalid signature");
+      }
+
+      return account.solveCaptchaGame(identity, solution);
+    },
   };
 };

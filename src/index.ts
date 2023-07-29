@@ -26,7 +26,7 @@ import { NotFoundError, TooManyRequestsError, BadRequestError } from "./errors";
 import spellCheck from "./spellCheck";
 import palettes from "./palettes";
 import monitorRequest from "./monitorRequest";
-import generateCaptcha4 from "./modules/generateCaptcha";
+import generateCaptcha4 from "./modules/_generateCaptcha";
 
 const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
@@ -87,13 +87,9 @@ Promise.all([database.initialize(), contract.initialize()])
       requestWithdrawal,
       solveCaptcha,
 
-      // captcha
-      retrieveCaptchaChallenge,
-      retrieveCaptchaTarget,
-
-      generateCaptcha,
-      generateCaptcha2,
-      // generateCaptcha3,
+      // captcha game endpoints
+      captchaGameGenerate,
+      captchaGameSolve,
     }) => {
       // canvas connections
       const app = express();
@@ -122,22 +118,6 @@ Promise.all([database.initialize(), contract.initialize()])
         return getTransactions(req.params.identity)
           .then((transactions) => res.send(transactions))
           .catch((e) => processError(res, e));
-      });
-
-      app.get(`${BASE_URL}/captchas/:challengeId/challenge.gif`, (req, res) => {
-        try {
-          return retrieveCaptchaChallenge(req.params.challengeId).pipe(res);
-        } catch (e) {
-          return processError(res, e as Error);
-        }
-      });
-
-      app.get(`${BASE_URL}/captchas/:challengeId/target.gif`, (req, res) => {
-        try {
-          return retrieveCaptchaTarget(req.params.challengeId).pipe(res);
-        } catch (e) {
-          return processError(res, e as Error);
-        }
       });
 
       app.post(
@@ -264,12 +244,6 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      app.get(`${BASE_URL}/generate-captcha`, (req, res) => {
-        return generateCaptcha()
-          .then((result) => res.send(encodeBase64(result)))
-          .catch((e) => processError(res, e));
-      });
-
       /*
       app.get(`${BASE_URL}/generate-captcha-2`, (req, res) => {
         try {
@@ -282,14 +256,6 @@ Promise.all([database.initialize(), contract.initialize()])
       app.get(`${BASE_URL}/captcha.gif`, (req, res) => {
         try {
           return generateCaptcha4().pipe(res);
-        } catch (e) {
-          return processError(res, e as Error);
-        }
-      });
-
-      app.get(`${BASE_URL}/captcha.gif`, (req, res) => {
-        try {
-          return generateCaptcha2().pipe(res);
         } catch (e) {
           return processError(res, e as Error);
         }
@@ -407,39 +373,55 @@ Promise.all([database.initialize(), contract.initialize()])
       // # of users * second
       // 5 users need to wait for 5 seconds
       // 100 users need to wait for a minute and a half
-      app.get(
-        `${BASE_URL}/sessions/:sessionHash/updates/:signature`,
-        (req, res) => {
-          // need to have the correct auth window
-          console.log(req.params.signature);
-          // need to have signature and verify user, do we ?
-          if (connections.has(req.params.sessionHash)) {
-            const set = connections.get(
-              req.params.sessionHash
-            ) as Set<Response>;
+      app.get(`${BASE_URL}/sessions/:sessionHash/updates/`, (req, res) => {
+        // need to have the correct auth window
+        // console.log(req.params.signature);
+        // need to have signature and verify user, do we ?
+        if (connections.has(req.params.sessionHash)) {
+          const set = connections.get(req.params.sessionHash) as Set<Response>;
 
-            if (set.size > 100) return res.sendStatus(429);
+          if (set.size > 100) return res.sendStatus(429);
 
-            set.add(res);
-          } else {
-            connections.set(req.params.sessionHash, new Set([res]));
-          }
-
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          });
-
-          req.on("close", () => {
-            res.end();
-            const drawingConnections = connections.get(req.params.sessionHash);
-            if (!drawingConnections) return;
-            drawingConnections.delete(res);
-            if (drawingConnections.size === 0)
-              connections.delete(req.params.sessionHash);
-          });
+          set.add(res);
+        } else {
+          connections.set(req.params.sessionHash, new Set([res]));
         }
+
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+
+        req.on("close", () => {
+          res.end();
+          const drawingConnections = connections.get(req.params.sessionHash);
+          if (!drawingConnections) return;
+          drawingConnections.delete(res);
+          if (drawingConnections.size === 0)
+            connections.delete(req.params.sessionHash);
+        });
+      });
+
+      app.get(`${BASE_URL}/captcha/:identity/play`, (req, res) => {
+        try {
+          return res.send(encodeBase64(captchaGameGenerate(req.params.identity)))
+        } catch (e) {
+          return processError(res, e as Error);
+        }
+      });
+
+      app.post(
+        `${BASE_URL}/captcha/:identity/solve`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) =>
+          captchaGameSolve(
+            req.params.identity,
+            parseInt(req.body.solution),
+            req.body.signature
+          )
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e))
       );
 
       app.use(express.static(`${PATH}/public`));
