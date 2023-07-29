@@ -120,7 +120,14 @@ export default (clock: Clock, database: Database, paint: Paint) => {
           identity,
           CaptchaAttemptOutcome[isSuccess ? "SUCCESS" : "FAILURE"]
         )
-        .then(() => ({solution: captcha.solution}));
+        .then(() => database.loadCaptchaAttempts(captcha.filename))
+        .then((attempts) => ({
+          successRatio:
+            Math.round(100 * attempts.filter(
+              ({ outcome }) => outcome === CaptchaAttemptOutcome.SUCCESS
+            ).length / attempts.length) / 100,
+          solution: captcha.solution,
+        }));
     },
 
     /*

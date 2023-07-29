@@ -116,15 +116,22 @@ export default class Database {
     );
   }
 
-  insertCaptchaAttempt(filename: string, identity: string, outcome: CaptchaAttemptOutcome) {
+  insertCaptchaAttempt(
+    filename: string,
+    identity: string,
+    outcome: CaptchaAttemptOutcome
+  ) {
     return this.upsert(
       `INSERT INTO captcha_attempts (filename, identity, outcome) VALUES('${filename}', '${identity}', ${outcome})`
     );
   }
 
-  loadCaptchaAttempts(filename: string) {
+  loadCaptchaAttempts(
+    filename: string
+  ): Promise<Array<{ outcome: CaptchaAttemptOutcome }>> {
+    // TODO: add blacklist for identity
     return this.getAll(
-      `SELECT * FROM captcha_attempts WHERE filename == '${filename}'`
+      `SELECT outcome FROM captcha_attempts WHERE filename == '${filename}'`
     );
   }
 
