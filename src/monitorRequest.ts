@@ -36,7 +36,7 @@ const monitorRequest =
 
     let requestCount = requestTypeMap.get(ip) || 0;
 
-    console.log(`[${ip}]: ${requestCount} ${req.url}`);
+    console.log(`[${ip}]: ${requestCount} ${req.method} ${req.url}`);
 
     if (
       (requestType === RequestType.Read && requestCount > 500) ||

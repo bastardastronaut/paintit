@@ -31,7 +31,15 @@ import generateCaptcha4 from "./modules/_generateCaptcha";
 const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
 
+enum HandoverState {
+  AWAITING_REQUEST,
+  AWAITING_RESPONSE,
+}
 const connections = new Map<string, Set<Response>>();
+const handoverRequests = new Map<
+  string,
+  { state: HandoverState; currentResponse: Response }
+>();
 const blockedUsers = new Set<string>();
 
 const notify = (hash: string, event: string, message: string) => {
@@ -49,7 +57,7 @@ const database = new Database({
     notify(hash, "iteration-progress", iteration.toString()),
 });
 
-const PATH = `${__dirname}/${process.env.APP_PATH || ".."}`;
+const PATH = process.env.APP_PATH || `${__dirname}/..`;
 const filesystem = new FileSystem(PATH);
 const clock = new Clock();
 const paint = new Paint();
@@ -81,6 +89,7 @@ Promise.all([database.initialize(), contract.initialize()])
       getTransactions,
 
       // endpoints behind authorization
+      // payload needs sanitization
       registerAccount,
       postSessionPaint,
       postSessionPrompt,
@@ -293,6 +302,7 @@ Promise.all([database.initialize(), contract.initialize()])
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
         (req, res) => {
+          // TODO: need to sanitize input
           const set = connections.get(req.params.sessionHash);
           if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);
           if (!set) return res.sendStatus(404);
@@ -403,9 +413,68 @@ Promise.all([database.initialize(), contract.initialize()])
         });
       });
 
+      app.get(`${BASE_URL}/handover/:identity`, (req, res) => {
+        const handoverRequest = handoverRequests.get(req.params.identity);
+        const close = () => {
+          res.end();
+        };
+
+        if (Object.keys(req.query).length > 0 && !handoverRequest)
+          return res.sendStatus(404);
+
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+
+        if (handoverRequest) {
+          handoverRequest.currentResponse.write(
+            `event: handover-request\ndata: ${JSON.stringify(req.query)}\n\n`
+          );
+          handoverRequest.currentResponse.end();
+          handoverRequests.set(req.params.identity, {
+            state: HandoverState.AWAITING_RESPONSE,
+            currentResponse: res,
+          });
+        } else {
+          handoverRequests.set(req.params.identity, {
+            state: HandoverState.AWAITING_REQUEST,
+            currentResponse: res,
+          });
+        }
+
+        clock.in(360).then(close);
+
+        req.on("close", close);
+      });
+
+      app.post(
+        `${BASE_URL}/handover/:identity`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) => {
+          const handoverRequest = handoverRequests.get(req.params.identity);
+          if (
+            !handoverRequest ||
+            handoverRequest.state !== HandoverState.AWAITING_RESPONSE
+          )
+            return res.sendStatus(404);
+
+          handoverRequest.currentResponse.write(
+            `event: handover-response\ndata: ${req.body.payload}\n\n`
+          );
+          handoverRequest.currentResponse.end();
+          handoverRequests.delete(req.params.identity);
+
+          res.sendStatus(200);
+        }
+      );
+
       app.get(`${BASE_URL}/captcha/:identity/play`, (req, res) => {
         try {
-          return res.send(encodeBase64(captchaGameGenerate(req.params.identity)))
+          return res.send(
+            encodeBase64(captchaGameGenerate(req.params.identity))
+          );
         } catch (e) {
           return processError(res, e as Error);
         }

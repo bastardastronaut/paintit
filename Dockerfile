@@ -11,4 +11,6 @@ COPY . .
 
 RUN npm run build
 
+ENV APP_PATH /usr/src/app
+
 CMD node src/index.js

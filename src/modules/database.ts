@@ -300,6 +300,7 @@ export default class Database {
     );
   }
 
+  // not so simple, we need to distinguish by whether account is verified, vip etc
   resetParticipantsPaint(hash: string, paint: number) {
     return this.upsert(
       `UPDATE session_paint SET paint = ${paint} WHERE hash = '${hash}'`
@@ -341,8 +342,9 @@ ORDER BY created_at ASC`
   private construct() {
     return new Promise((resolve) => {
       this.db.serialize(() => {
+        // we don't necessarily need to keep track of users only those that are email registered
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS users (identity TEXT PRIMARY KEY, email TEXT, account_id TEXT, tokens INTEGER, last_login INTEGER, updated_at INTEGER, created_at INTEGER, is_vip BOOLEAN)"
+          "CREATE TABLE IF NOT EXISTS users (identity TEXT PRIMARY KEY, email TEXT, account_id TEXT, tokens INTEGER, last_login INTEGER, updated_at INTEGER, created_at INTEGER, is_vip BOOLEAN, is_verified BOOLEAN, invited_by TEXT)"
         );
 
         this.db.run(
