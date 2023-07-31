@@ -20,7 +20,7 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 10800;
+const ITERATION_LENGTH = 900;
 const ITERATION_COUNT = 5;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 200;
@@ -241,7 +241,13 @@ export default async (
   };
 
   const finishSession = async (s: Session) => {
-    console.log(`finishing session ${s.hash}`);
+    const revisionCache = revisionCaches.get(s.hash) || [];
+    if (revisionCache) {
+      revisionCache
+        .slice(0, -1)
+        .forEach((r) => filesystem.removeFile(r.revision));
+      revisionCaches.delete(s.hash);
+    }
     // need to calculate contributions and create transactions
     const contributions = await loadSessionContributions(s.hash);
     return database
@@ -255,9 +261,9 @@ export default async (
           }))
         )
       )
-      .then(() => database.getActiveSessions())
+      .then(() => database.getPromptSessions())
       .then((sessions) => {
-        if (sessions.length >= 3) return null;
+        if (sessions.length > 1) return null;
         const nextSize = getSize(s.columns, s.rows) - 2;
         return generateDrawing(nextSize > 0 ? nextSize : 0);
       })
@@ -356,7 +362,8 @@ export default async (
     },
     loadPixelHistory: (sessionHash: string, positionIndex: number) =>
       database.getPixelHistory(sessionHash, positionIndex).then((activity) =>
-        activity.map(({ position_index, color_index }) => ({
+        activity.map(({ identity, position_index, color_index }) => ({
+          identity,
           positionIndex: position_index,
           colorIndex: color_index,
         }))
@@ -767,12 +774,16 @@ export default async (
           colorIndex
         );
 
+        console.log();
+        console.log(isNewUser);
+        console.log();
+
+        console.log(paintLeft);
+
         return Promise.all([
           filesystem.saveFile(newCanvas),
           database.updateRevision(sessionHash, updatedRevision),
-          isNewUser
-            ? database.generateUserPaint(sessionHash, identity, paintLeft)
-            : database.updateUserPaint(sessionHash, identity, paintLeft),
+          database.updateUserPaint(sessionHash, identity, paintLeft),
           isNewUser
             ? database.insertSignature(sessionHash, identity, signature)
             : database.updateSignature(sessionHash, identity, signature),

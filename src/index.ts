@@ -25,7 +25,7 @@ import endpoints from "./endpoints";
 import { NotFoundError, TooManyRequestsError, BadRequestError } from "./errors";
 import spellCheck from "./spellCheck";
 import palettes from "./palettes";
-import monitorRequest from "./monitorRequest";
+import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import generateCaptcha4 from "./modules/_generateCaptcha";
 
 const PORT = process.env.PORT || 8081;
@@ -314,7 +314,10 @@ Promise.all([database.initialize(), contract.initialize()])
             req.params.sessionHash.length !== 66 ||
             req.body.revision.length !== 66 ||
             req.body.identity.length !== 42 ||
-            req.body.signature.length !== 132
+            req.body.signature.length !== 132 ||
+            isNaN(positionIndex) ||
+            isNaN(colorIndex) ||
+            colorIndex > 15
           )
             return res.sendStatus(400);
 
@@ -406,6 +409,8 @@ Promise.all([database.initialize(), contract.initialize()])
         if (connections.has(req.params.sessionHash)) {
           const set = connections.get(req.params.sessionHash) as Set<Response>;
 
+          // this is the sensitive one, we need to reserve seats for verified accounts
+          // non verified can only be ~50
           if (set.size > 100) return res.sendStatus(429);
 
           set.add(res);
@@ -430,13 +435,19 @@ Promise.all([database.initialize(), contract.initialize()])
       });
 
       app.get(`${BASE_URL}/handover/:identity`, (req, res) => {
-        const handoverRequest = handoverRequests.get(req.params.identity);
+        let handoverRequest = handoverRequests.get(req.params.identity);
         const close = () => {
           res.end();
         };
 
         if (Object.keys(req.query).length > 0 && !handoverRequest)
           return res.sendStatus(404);
+
+        if (handoverRequest && Object.keys(req.query).length === 0) {
+          handoverRequest.currentResponse.write(`event: handover-close\ndata: null\n\n`);
+          handoverRequest.currentResponse.end();
+          handoverRequest = undefined;
+        }
 
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
@@ -491,6 +502,24 @@ Promise.all([database.initialize(), contract.initialize()])
           return res.send(
             encodeBase64(captchaGameGenerate(req.params.identity))
           );
+        } catch (e) {
+          return processError(res, e as Error);
+        }
+      });
+
+      app.get(`${BASE_URL}/status`, (req, res) => {
+        try {
+          return res.send({
+            read: Object.fromEntries(
+              requests.get(RequestType.Read) as Map<string, number>
+            ),
+            mutate: Object.fromEntries(
+              requests.get(RequestType.Mutate) as Map<string, number>
+            ),
+            create: Object.fromEntries(
+              requests.get(RequestType.Create) as Map<string, number>
+            ),
+          });
         } catch (e) {
           return processError(res, e as Error);
         }

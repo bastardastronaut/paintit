@@ -8,7 +8,7 @@ const FORBIDDEN_COMBINATIONS = readFileLines(`${__dirname}/badwords.txt`);
 
 const getDictionary = (dict: string) =>
   new Promise((resolve, reject) => {
-    SpellChecker.getDictionary("en-GB", function (err: any, dictionary: any) {
+    SpellChecker.getDictionary(dict, function (err: any, dictionary: any) {
       if (err) return reject(err);
 
       resolve(dictionary);

@@ -155,9 +155,11 @@ export default class Database {
     });
   }
 
-  insertUserFromChain(accountId: string, tokens: number) {
+  // probably not necessary
+  // we can do it via registration on demand
+  insertUserFromChain(identity: string, accountId: string, isVip: boolean) {
     return this.upsert(
-      `INSERT INTO users (identity, account_id, tokens, created_at) VALUES('${accountId}', '${accountId}', ${tokens}, unixepoch())`
+      `INSERT INTO users (identity, account_id, is_vip, created_at) VALUES('${identity}', '${accountId}', ${isVip} unixepoch())`
     );
   }
 
@@ -210,7 +212,8 @@ export default class Database {
 
   updateUserPaint(sessionHash: string, identity: string, paintLeft: number) {
     return this.upsert(
-      `UPDATE session_paint SET paint='${paintLeft}' WHERE hash='${sessionHash}' AND identity='${identity}'`
+      `INSERT INTO session_paint (hash, identity, paint, last_action) VALUES('${sessionHash}', '${identity}', '${paintLeft}', unixepoch())
+      ON CONFLICT (identity, hash) DO UPDATE SET paint='${paintLeft}'`
     );
   }
 
@@ -237,7 +240,7 @@ export default class Database {
     identity: string,
     iteration: number
   ) {
-    return this.get<{iterationCount: number}>(
+    return this.get<{ iterationCount: number }>(
       `SELECT COUNT(*) as iterationCount FROM draw_activity WHERE hash='${sessionHash}' AND identity='${identity}' AND iteration=${iteration}`
     );
   }
@@ -281,7 +284,17 @@ export default class Database {
     );
   }
 
-  addUserEmail(email: string) {}
+  addUserEmail(identity: string, email: string, verificationCode: number) {
+    return this.upsert(
+      `UPDATE users SET email='${email}', verification_code=${verificationCode} WHERE identity='${identity}'`
+    );
+  }
+
+  verifyUser(email: string) {
+    return this.upsert(
+      `UPDATE users SET is_verified=TRUE WHERE email='${email}'`
+    );
+  }
 
   getUserByIdentity(identity: string) {
     return this.get(`SELECT * FROM users WHERE identity='${identity}'`);
@@ -332,14 +345,12 @@ export default class Database {
   }
 
   resetParticipantsPaint(hash: string) {
-    return this.upsert(
-      `DELETE FROM session_paint WHERE hash = '${hash}'`
-    );
+    return this.upsert(`DELETE FROM session_paint WHERE hash = '${hash}'`);
   }
 
   getPixelHistory(hash: string, positionIndex: number): Promise<Activity[]> {
     return this.getAll<Activity>(
-      `SELECT position_index, color_index
+      `SELECT position_index, color_index, identity
 FROM draw_activity
 WHERE hash='${hash}'
 AND position_index=${positionIndex}
@@ -374,7 +385,7 @@ ORDER BY created_at ASC`
       this.db.serialize(() => {
         // we don't necessarily need to keep track of users only those that are email registered
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS users (identity TEXT PRIMARY KEY, email TEXT, account_id TEXT, tokens INTEGER, last_login INTEGER, updated_at INTEGER, created_at INTEGER, is_vip BOOLEAN, is_verified BOOLEAN, invited_by TEXT)"
+          "CREATE TABLE IF NOT EXISTS users (identity TEXT PRIMARY KEY, email TEXT, account_id TEXT, tokens INTEGER, last_login INTEGER, updated_at INTEGER, nickname TEXT, created_at INTEGER, is_vip BOOLEAN, is_verified BOOLEAN, invited_by TEXT, verification_code INTEGER)"
         );
 
         this.db.run(

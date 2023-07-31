@@ -14,8 +14,6 @@
   "license": "ISC",
   "dependencies": {
     "@mailchimp/mailchimp_transactional": "^1.0.50",
-    "@types/cors": "^2.8.13",
-    "@types/request-ip": "^0.0.38",
     "body-parser": "^1.20.2",
     "canvas": "^2.11.2",
     "chroma-js": "^2.4.2",
@@ -29,6 +27,8 @@
     "ws": "^8.11.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/request-ip": "^0.0.38",
     "@types/bn.js": "^5.1.1",
     "@types/chroma-js": "^2.4.0",
     "@types/express": "^4.17.14",

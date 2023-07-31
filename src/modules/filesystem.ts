@@ -12,19 +12,19 @@ export default class FileSystem {
   }
 
   saveFile(canvas: Uint8Array) {
-    return Promise.resolve(_files.set(sha256(canvas), canvas));
-    // console.log(`saving ${this.path}/${sha256(canvas)}`);
-    // return writeFile(`${this.path}/${sha256(canvas)}`, canvas);
+    //return Promise.resolve(_files.set(sha256(canvas), canvas));
+    console.log(`saving ${this.path}/${sha256(canvas)}`);
+    return writeFile(`${this.path}/${sha256(canvas)}`, canvas);
   }
 
   loadFile(hash: string) {
-    return Promise.resolve(_files.get(hash) as Uint8Array);
-    // console.log(`loading ${this.path}/${hash}`);
-    //return readFile(`${this.path}/${hash}`);
+    //return Promise.resolve(_files.get(hash));
+    console.log(`loading ${this.path}/${hash}`);
+    return readFile(`${this.path}/${hash}`);
   }
 
   removeFile(hash: string) {
-    return Promise.resolve(_files.delete(hash));
-    //return unlink(`${this.path}/${hash}`);
+    // return Promise.resolve(_files.delete(hash));
+    return unlink(`${this.path}/${hash}`);
   }
 }
