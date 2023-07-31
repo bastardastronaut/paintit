@@ -8,7 +8,7 @@ export default class FileSystem {
   private path;
 
   constructor(path: string) {
-    this.path = `${path}/drawings`;
+    this.path = `${path}`;
   }
 
   saveFile(canvas: Uint8Array) {
