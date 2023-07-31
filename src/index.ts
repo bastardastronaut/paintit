@@ -310,6 +310,14 @@ Promise.all([database.initialize(), contract.initialize()])
           const positionIndex = parseInt(req.body.positionIndex);
           const colorIndex = parseInt(req.body.colorIndex);
 
+          if (
+            req.params.sessionHash.length !== 66 ||
+            req.body.revision.length !== 66 ||
+            req.body.identity.length !== 42 ||
+            req.body.signature.length !== 132
+          )
+            return res.sendStatus(400);
+
           postSessionPaint(
             req.params.sessionHash,
             req.body.identity,
@@ -318,14 +326,22 @@ Promise.all([database.initialize(), contract.initialize()])
             positionIndex,
             colorIndex
           )
-            .then(({ updatedRevision, paintCost, paintLeft }) => {
+            .then(({ userMetrics, updatedRevision, paintCost, paintLeft }) => {
+              const verificationMultiplier = userMetrics.is_vip
+                ? 0.5
+                : userMetrics.is_verified
+                ? 1
+                : 3;
+
               // TODO: return ACK
               // a signature to the request
               // + time until next paint is allowed
               const userCount =
                 connections.get(req.params.sessionHash)?.size || 1;
               const timeout =
-                (Math.ceil(userCount / 3) * 2500 * paintCost) / 100;
+                (verificationMultiplier *
+                  (Math.ceil(userCount / 3) * 2500 * paintCost)) /
+                100;
 
               blockedUsers.add(req.body.identity);
               setTimeout(() => blockedUsers.delete(req.body.identity), timeout);

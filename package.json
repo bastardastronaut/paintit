@@ -15,6 +15,7 @@
   "dependencies": {
     "@mailchimp/mailchimp_transactional": "^1.0.50",
     "@types/cors": "^2.8.13",
+    "@types/request-ip": "^0.0.38",
     "body-parser": "^1.20.2",
     "canvas": "^2.11.2",
     "chroma-js": "^2.4.2",
@@ -22,6 +23,7 @@
     "ethers": "^6.0.8",
     "express": "^4.18.2",
     "gifencoder": "^2.0.1",
+    "request-ip": "^3.3.0",
     "simple-spellchecker": "^1.0.2",
     "sqlite3": "^5.1.6",
     "ws": "^8.11.0"

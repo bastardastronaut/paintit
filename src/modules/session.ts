@@ -22,7 +22,11 @@ import { getDistance } from "./utils";
 
 const ITERATION_LENGTH = 10800;
 const ITERATION_COUNT = 5;
-const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution
+const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
+const DEFAULT_PAINT = 200;
+const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
+const DEFAULT_PAINT_VIP = 3000;
+const INVITATION_BONUS = 100;
 const BATCH_FRAMERATE_SECONDS = 10;
 const DEFAULT_PROMPT_WORD_LENGTH = 5;
 const EXCLUDED = ["the", "a", "an"];
@@ -40,8 +44,6 @@ const DIMENSIONS = [
 // for POC
 //const DIMENSIONS = [[16, 16]];
 const DIMENSIONS = [
-  [[16, 16]], // TODO: for testing purposes only
-
   [
     [32, 24],
     [24, 32],
@@ -96,7 +98,6 @@ const DIMENSIONS = [
 
 // this'll be only for free lobbies
 // for premium ones, paint will be generated after participation is confirmed
-const DEFAULT_PAINT = 2500;
 
 type RevisionCacheEntry = {
   revision: string;
@@ -169,16 +170,7 @@ export default async (
       if (!s) throw new Error("session loading failed");
       const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH;
 
-      const missingWordCount =
-        s.current_iteration === 0 && s.prompt
-          ? promptSize -
-            s.prompt
-              .split(" ")
-              .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length
-          : promptSize;
-
       return {
-        missingWordCount,
         paletteIndex: s.palette_index,
         columns: s.columns,
         rows: s.rows,
@@ -216,7 +208,6 @@ export default async (
       const canvasArray = new Uint8Array(canvas);
 
       // also consider initial canvas in the calculation
-      //
 
       const contributions = new Map<string, number>();
       const historyLengths = new Map<number, number>();
@@ -282,7 +273,7 @@ export default async (
 
     return Promise.all([
       database.progressSession(session.hash, session.current_iteration + 1),
-      database.resetParticipantsPaint(session.hash, ITERATION_PAINT),
+      database.resetParticipantsPaint(session.hash),
     ])
       .then(() => database.getSessionByHash(session.hash))
       .then((_session) =>
@@ -293,6 +284,28 @@ export default async (
           : null
       );
   };
+
+  const loadSessionPaint = (sessionHash: string, identity: string) =>
+    database.getUserSessionPaint(sessionHash, identity).then((result) =>
+      result === null
+        ? database
+            .getUserMetrics(identity)
+            .then(([userStatus, invitations]) => {
+              if (!userStatus) return DEFAULT_PAINT;
+
+              const basePaint = userStatus.is_vip
+                ? DEFAULT_PAINT_VIP
+                : userStatus.is_verified
+                ? DEFAULT_PAINT_EMAIL_VERIFIED
+                : DEFAULT_PAINT;
+
+              return (
+                basePaint +
+                (invitations?.invitationCount || 0) * INVITATION_BONUS
+              );
+            })
+        : result.paint
+    );
 
   for (const s of currentSessions) {
     if (s.current_iteration > 0 && s.current_iteration < ITERATION_COUNT) {
@@ -517,11 +530,7 @@ export default async (
         );
     },
 
-    loadSessionPaint: (sessionHash: string, identity: string) => {
-      return database
-        .getUserSessionPaint(sessionHash, identity)
-        .then((result) => (result === null ? DEFAULT_PAINT : result.paint));
-    },
+    loadSessionPaint,
 
     loadSessionPromptByIdentity: (sessionHash: string, identity: string) => {
       return database
@@ -583,8 +592,6 @@ export default async (
 
           if (promptSessions.length > 0) return true;
 
-          // only if there are no other sessions in prompt phase
-          // TODO: only if currently active sessions length is < 10
           const [s] = await Promise.all([
             database.getSessionByHash(sessionHash),
             generateDrawing(
@@ -602,6 +609,7 @@ export default async (
 
           return true;
         }
+
         await database.insertSessionPrompt(
           sessionHash,
           identity,
@@ -613,116 +621,6 @@ export default async (
       } finally {
         lockedSessions.delete(sessionHash);
       }
-    },
-
-    _processNewPrompt: async (
-      sessionHash: string,
-      identity: string,
-      promptWord: string,
-      signature: string
-    ) => {
-      const text = promptWord.trim();
-      const words = text.split(" ");
-      const session = await loadSession(sessionHash);
-      if (!session) throw new BadRequestError();
-      const newPrompt = session.prompt ? `${session.prompt} ${text}` : text;
-      if (
-        (words.length === 1 && EXCLUDED.includes(words[0].toLowerCase())) ||
-        words.length > 2 ||
-        (words.length === 2 && !EXCLUDED.includes(words[0].toLowerCase())) ||
-        !(await spellCheck(newPrompt))
-      )
-        throw new BadRequestError("invalid prompt");
-
-      lockedSessions.add(sessionHash);
-
-      // TODO: also verify signature, not needed for now as we don't reward participation in prompts
-
-      lockedSessions.add(sessionHash);
-
-      try {
-        const r = session.rows * session.columns;
-        const consensusRequirement = Math.round(
-          (Math.log(r) / Math.log(2)) * (r / 16384)
-        );
-
-        if (session.iteration > 0)
-          throw new BadRequestError("session prompt completed");
-
-        const matchingPrompts = await database.getMatchingPrompts(
-          sessionHash,
-          text
-        );
-
-        // TODO: check against whether match has already the same prompt?
-        if (
-          matchingPrompts &&
-          matchingPrompts.matchCount >= consensusRequirement - 1
-        ) {
-          // proceed with completion
-
-          const isComplete =
-            session.prompt
-              .split(" ")
-              .filter((s) => !EXCLUDED.includes(s.toLowerCase())).length ===
-            session.promptSize - 1;
-
-          const duration = clock.now - session.iterationStartedAt;
-
-          await database.updateSessionPrompt(
-            sessionHash,
-            newPrompt,
-            isComplete
-          );
-
-          const currentSize = getSize(session.columns, session.rows);
-
-          const nextSize =
-            duration < ITERATION_LENGTH
-              ? currentSize + 1
-              : duration > 2 * ITERATION_LENGTH
-              ? currentSize - 1
-              : currentSize;
-
-          if (isComplete) {
-            // TODO: only if currently active sessions length is < 10
-            const [s] = await Promise.all([
-              database.getSessionByHash(sessionHash),
-              generateDrawing(
-                nextSize >= DIMENSIONS.length
-                  ? DIMENSIONS.length - 1
-                  : nextSize < 0
-                  ? 0
-                  : nextSize
-              ),
-            ]);
-
-            clock
-              .at(s!.iteration_started_at + ITERATION_LENGTH)
-              .then(() => progressSession(s as Session));
-          }
-
-          await database.deleteSessionPrompts(sessionHash);
-
-          return { prompt: newPrompt, isComplete };
-        }
-
-        await database.insertSessionPrompt(
-          sessionHash,
-          identity,
-          text,
-          signature
-        );
-
-        return null;
-      } finally {
-        lockedSessions.delete(sessionHash);
-      }
-
-      // 2.: check if it reaches consensus
-      // 3.: if it does, update prompt on session, remove all user prompts from database
-      // 4.: if prompt length has reached length requirement, drawing commences
-      // return database.insertSessionPrompt(hash, identity, prompt, signature);
     },
 
     paint: async (
@@ -789,16 +687,16 @@ export default async (
       lockedSessions.add(sessionHash);
 
       try {
-        let paintLeft = (
-          await database.getUserSessionPaint(sessionHash, identity)
-        )?.paint;
-        let isNewUser = false;
-        if (paintLeft === undefined) {
-          isNewUser = true;
-          paintLeft = DEFAULT_PAINT;
-        }
+        let [[userMetrics], session, existingSignature, paintLeft] =
+          await Promise.all([
+            database.getUserMetrics(identity),
+            database.getSessionByHash(sessionHash),
+            database.getSessionSignature(sessionHash, identity),
+            loadSessionPaint(sessionHash, identity),
+          ]);
 
-        const session = await database.getSessionByHash(sessionHash);
+        let isNewUser = !!existingSignature;
+
         if (!session) throw new NotFoundError("session not found");
         if (
           session.current_iteration === 0 ||
@@ -808,10 +706,6 @@ export default async (
         const canvas = await filesystem.loadFile(session.revision);
         if (!canvas) throw new NotFoundError("canvas not found");
 
-        // check for eligibility
-        // is the session in correct state?
-        // need to know palette,
-        // remember, signature = all previous actions
         const newCanvas = new Uint8Array(canvas.byteLength);
 
         newCanvas.set(canvas);
@@ -893,7 +787,12 @@ export default async (
 
           revisionCaches.set(sessionHash, revisionCache);
 
-          return { updatedRevision, paintCost, paintLeft };
+          return {
+            userMetrics: userMetrics || { is_verified: false, is_vip: false },
+            updatedRevision,
+            paintCost,
+            paintLeft,
+          };
         });
       } finally {
         console.log(`unlocked after ${new Date().getTime() - lockedAt}`);

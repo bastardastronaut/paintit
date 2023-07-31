@@ -1,6 +1,7 @@
-import { Express, Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
 import { TooManyRequestsError } from "./errors";
 import Clock from "./modules/clock";
+import requestIp from "request-ip";
 
 enum RequestType {
   Read,
@@ -29,10 +30,12 @@ const monitorRequest =
       ? RequestType.Read
       : RequestType.Mutate;
 
-    const ip = req.ip;
+    const ip = requestIp.getClientIp(req) || '';
 
     const requestTypeMap = requests.get(requestType);
     if (!requestTypeMap) throw new Error("request type not found");
+
+    if (!ip) return next();
 
     let requestCount = requestTypeMap.get(ip) || 0;
 

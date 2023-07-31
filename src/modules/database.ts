@@ -232,6 +232,37 @@ export default class Database {
     );
   }
 
+  getUserIterationContributions(
+    sessionHash: string,
+    identity: string,
+    iteration: number
+  ) {
+    return this.get<{iterationCount: number}>(
+      `SELECT COUNT(*) as iterationCount FROM draw_activity WHERE hash='${sessionHash}' AND identity='${identity}' AND iteration=${iteration}`
+    );
+  }
+
+  getSessionSignature(sessionHash: string, identity: string) {
+    return this.get<SessionPaint>(
+      `SELECT * FROM draw_signatures WHERE hash='${sessionHash}' AND identity='${identity}'`
+    );
+  }
+
+  // returns
+  // is_vip,
+  // is_verified (email)
+  // invitation count
+  getUserMetrics(identity: string) {
+    return Promise.all([
+      this.get<{ is_vip: boolean; is_verified: boolean }>(
+        `SELECT is_vip, is_verified FROM users WHERE identity='${identity}'`
+      ),
+      this.get<{ invitationCount: number }>(
+        `SELECT COUNT(*) AS invitationCount FROM users WHERE invited_by='${identity}' AND is_verified=TRUE`
+      ),
+    ]);
+  }
+
   insertSessionPrompt(
     sessionHash: string,
     identity: string,
@@ -300,10 +331,9 @@ export default class Database {
     );
   }
 
-  // not so simple, we need to distinguish by whether account is verified, vip etc
-  resetParticipantsPaint(hash: string, paint: number) {
+  resetParticipantsPaint(hash: string) {
     return this.upsert(
-      `UPDATE session_paint SET paint = ${paint} WHERE hash = '${hash}'`
+      `DELETE FROM session_paint WHERE hash = '${hash}'`
     );
   }
 
