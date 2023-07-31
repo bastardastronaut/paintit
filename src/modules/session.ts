@@ -694,15 +694,12 @@ export default async (
       lockedSessions.add(sessionHash);
 
       try {
-        let [[userMetrics], session, existingSignature, paintLeft] =
+        let [[userMetrics], session, paintLeft] =
           await Promise.all([
             database.getUserMetrics(identity),
             database.getSessionByHash(sessionHash),
-            database.getSessionSignature(sessionHash, identity),
             loadSessionPaint(sessionHash, identity),
           ]);
-
-        let isNewUser = !!existingSignature;
 
         if (!session) throw new NotFoundError("session not found");
         if (
@@ -774,19 +771,11 @@ export default async (
           colorIndex
         );
 
-        console.log();
-        console.log(isNewUser);
-        console.log();
-
-        console.log(paintLeft);
-
         return Promise.all([
           filesystem.saveFile(newCanvas),
           database.updateRevision(sessionHash, updatedRevision),
           database.updateUserPaint(sessionHash, identity, paintLeft),
-          isNewUser
-            ? database.insertSignature(sessionHash, identity, signature)
-            : database.updateSignature(sessionHash, identity, signature),
+          database.updateSignature(sessionHash, identity, signature),
         ]).then(() => {
           // if any error, we need to rollback
           if (revisionCache.length > 5) revisionCache.shift();

@@ -217,21 +217,16 @@ export default class Database {
     );
   }
 
+  updateSignature(sessionHash: string, identity: string, signature: string) {
+    return this.upsert(
+      `INSERT INTO draw_signatures (hash, identity, signature) VALUES('${sessionHash}', '${identity}', '${signature}')
+      ON CONFLICT (identity, hash) DO UPDATE draw_signatures SET signature='${signature}'`
+    );
+  }
+
   generateUserPaint(sessionHash: string, identity: string, paintLeft: number) {
     return this.upsert(
       `INSERT INTO session_paint (hash, identity, paint, last_action) VALUES('${sessionHash}', '${identity}', '${paintLeft}', unixepoch())`
-    );
-  }
-
-  insertSignature(sessionHash: string, identity: string, signature: string) {
-    return this.upsert(
-      `INSERT INTO draw_signatures (hash, identity, signature) VALUES('${sessionHash}', '${identity}', '${signature}')`
-    );
-  }
-
-  updateSignature(sessionHash: string, identity: string, signature: string) {
-    return this.upsert(
-      `UPDATE draw_signatures SET signature='${signature}' WHERE hash='${sessionHash}' AND identity='${identity}'`
     );
   }
 
@@ -245,16 +240,6 @@ export default class Database {
     );
   }
 
-  getSessionSignature(sessionHash: string, identity: string) {
-    return this.get<SessionPaint>(
-      `SELECT * FROM draw_signatures WHERE hash='${sessionHash}' AND identity='${identity}'`
-    );
-  }
-
-  // returns
-  // is_vip,
-  // is_verified (email)
-  // invitation count
   getUserMetrics(identity: string) {
     return Promise.all([
       this.get<{ is_vip: boolean; is_verified: boolean }>(
