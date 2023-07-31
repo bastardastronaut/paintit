@@ -57,13 +57,13 @@ type Signals = {
 };
 
 export default class Database {
-  db: SQLiteDatabse;
+  private db: SQLiteDatabse;
 
   signals: Signals;
 
-  constructor(signals: Signals) {
+  constructor(path: string, signals: Signals) {
     //this.db = new (verbose().Database)(":memory:");
-    this.db = new (verbose().Database)("test.sqlite");
+    this.db = new (verbose().Database)(`${path}/test.sqlite`);
     this.signals = signals;
   }
 

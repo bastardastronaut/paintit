@@ -52,13 +52,14 @@ const notify = (hash: string, event: string, message: string) => {
   }
 };
 
-const database = new Database({
+
+const PATH = process.env.APP_PATH || `${__dirname}/..`;
+const FS_PATH = process.env.FILESYSTEM_PATH || PATH
+const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
 });
-
-const PATH = process.env.APP_PATH || `${__dirname}/..`;
-const filesystem = new FileSystem(PATH);
+const filesystem = new FileSystem(FS_PATH);
 const clock = new Clock();
 const paint = new Paint();
 const contract = new Contract(
