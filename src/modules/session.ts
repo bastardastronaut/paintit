@@ -657,6 +657,7 @@ export default async (
         created_at: clock.now, // TBD
       });
 
+      // something is pretty bad here
       if (
         verifyMessage(
           getBytes(
