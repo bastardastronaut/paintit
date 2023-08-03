@@ -54,7 +54,7 @@ const notify = (hash: string, event: string, message: string) => {
 
 
 const PATH = process.env.APP_PATH || `${__dirname}/..`;
-const FS_PATH = process.env.FILESYSTEM_PATH || PATH
+const FS_PATH = process.env.FILESYSTEM_PATH || `${PATH}/drawings`
 const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
@@ -391,6 +391,7 @@ Promise.all([database.initialize(), contract.initialize()])
               const message = JSON.stringify(
                 await getSessionPrompts(req.params.sessionHash)
               );
+
               notify(req.params.sessionHash, "new-prompt", message);
             })
             .catch((e) => processError(res, e));

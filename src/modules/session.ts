@@ -243,6 +243,7 @@ export default async (
   const finishSession = async (s: Session) => {
     const revisionCache = revisionCaches.get(s.hash) || [];
     if (revisionCache) {
+      console.log(revisionCache)
       revisionCache
         .slice(0, -1)
         .forEach((r) => filesystem.removeFile(r.revision));

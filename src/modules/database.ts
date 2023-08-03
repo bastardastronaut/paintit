@@ -220,13 +220,7 @@ export default class Database {
   updateSignature(sessionHash: string, identity: string, signature: string) {
     return this.upsert(
       `INSERT INTO draw_signatures (hash, identity, signature) VALUES('${sessionHash}', '${identity}', '${signature}')
-      ON CONFLICT (identity, hash) DO UPDATE draw_signatures SET signature='${signature}'`
-    );
-  }
-
-  generateUserPaint(sessionHash: string, identity: string, paintLeft: number) {
-    return this.upsert(
-      `INSERT INTO session_paint (hash, identity, paint, last_action) VALUES('${sessionHash}', '${identity}', '${paintLeft}', unixepoch())`
+      ON CONFLICT (identity, hash) DO UPDATE SET signature='${signature}'`
     );
   }
 
