@@ -204,7 +204,7 @@ export default async (
       loadSessionCanvas(sessionHash),
       database.getActivityByDrawing(sessionHash),
     ]).then(([s, canvas, _finalCanvas, activityLog]) => {
-      if (!canvas) throw new NotFoundError()
+      if (!canvas) throw new NotFoundError();
       const finalCanvas = new Uint8Array(_finalCanvas);
       const canvasArray = new Uint8Array(canvas);
 
@@ -242,14 +242,6 @@ export default async (
   };
 
   const finishSession = async (s: Session) => {
-    const revisionCache = revisionCaches.get(s.hash) || [];
-    if (revisionCache) {
-      console.log(revisionCache)
-      revisionCache
-        .slice(0, -1)
-        .forEach((r) => filesystem.removeFile(r.revision));
-      revisionCaches.delete(s.hash);
-    }
     // need to calculate contributions and create transactions
     const contributions = await loadSessionContributions(s.hash);
     return database
@@ -269,7 +261,16 @@ export default async (
         const nextSize = getSize(s.columns, s.rows) - 2;
         return generateDrawing(nextSize > 0 ? nextSize : 0);
       })
-      .then(() => null);
+      .then(() => {
+        const revisionCache = revisionCaches.get(s.hash) || [];
+        if (revisionCache) {
+          revisionCache
+            .slice(0, -1)
+            .forEach((r) => filesystem.removeFile(r.revision));
+          revisionCaches.delete(s.hash);
+        }
+        return null;
+      });
   };
 
   const currentSessions = await database.getActiveSessions();
@@ -462,7 +463,7 @@ export default async (
         filesystem.loadFile(sessionHash),
         database.getActivityByDrawing(sessionHash),
       ]).then(([s, canvas, activityLog]) => {
-        if (!canvas) throw new NotFoundError()
+        if (!canvas) throw new NotFoundError();
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
@@ -698,12 +699,11 @@ export default async (
       lockedSessions.add(sessionHash);
 
       try {
-        let [[userMetrics], session, paintLeft] =
-          await Promise.all([
-            database.getUserMetrics(identity),
-            database.getSessionByHash(sessionHash),
-            loadSessionPaint(sessionHash, identity),
-          ]);
+        let [[userMetrics], session, paintLeft] = await Promise.all([
+          database.getUserMetrics(identity),
+          database.getSessionByHash(sessionHash),
+          loadSessionPaint(sessionHash, identity),
+        ]);
 
         if (!session) throw new NotFoundError("session not found");
         if (
