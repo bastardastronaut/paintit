@@ -20,22 +20,12 @@ export default class FileSystem {
   loadFile(hash: string) {
     //return Promise.resolve(_files.get(hash));
     console.log(`loading ${this.path}/${hash}`);
-    try {
-      return readFile(`${this.path}/${hash}`);
-    } catch (e) {
-      console.log(`failed`);
-      return Promise.resolve(new Uint8Array());
-    }
+    return readFile(`${this.path}/${hash}`).catch(() => console.log("failed"));
   }
 
   removeFile(hash: string) {
     // return Promise.resolve(_files.delete(hash));
     console.log(`removing ${this.path}/${hash}`);
-    try {
-      return unlink(`${this.path}/${hash}`);
-    } catch (e) {
-      console.log(`failed`);
-      return null;
-    }
+    return unlink(`${this.path}/${hash}`).catch(() => console.log("failed"));
   }
 }

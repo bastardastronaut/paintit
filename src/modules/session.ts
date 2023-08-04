@@ -204,6 +204,7 @@ export default async (
       loadSessionCanvas(sessionHash),
       database.getActivityByDrawing(sessionHash),
     ]).then(([s, canvas, _finalCanvas, activityLog]) => {
+      if (!canvas) throw new NotFoundError()
       const finalCanvas = new Uint8Array(_finalCanvas);
       const canvasArray = new Uint8Array(canvas);
 
@@ -461,6 +462,7 @@ export default async (
         filesystem.loadFile(sessionHash),
         database.getActivityByDrawing(sessionHash),
       ]).then(([s, canvas, activityLog]) => {
+        if (!canvas) throw new NotFoundError()
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
@@ -559,7 +561,7 @@ export default async (
         prompt.length > 32 ||
         !(await spellCheck(prompt))
       ) {
-        throw new BadRequestError("invalid prompt");
+        throw new BadRequestError(`invalid prompt: ${prompt}`);
       }
 
       const session = await loadSession(sessionHash);
