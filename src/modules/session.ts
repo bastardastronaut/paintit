@@ -601,19 +601,17 @@ export default async (
           await database.deleteSessionPrompts(sessionHash);
           const promptSessions = await database.getPromptSessions();
 
-          if (promptSessions.length > 0) return true;
-
-          const [s] = await Promise.all([
-            database.getSessionByHash(sessionHash),
-            generateDrawing(
+          if (promptSessions.length === 0) {
+            await generateDrawing(
               nextSize >= DIMENSIONS.length
                 ? DIMENSIONS.length - 1
                 : nextSize < 0
                 ? 0
                 : nextSize
-            ),
-          ]);
+            );
+          }
 
+          const s = await database.getSessionByHash(sessionHash);
           clock
             .at(s!.iteration_started_at + ITERATION_LENGTH)
             .then(() => progressSession(s as Session));
