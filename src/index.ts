@@ -3,6 +3,7 @@ import cors from "cors";
 import express, { Response } from "express";
 import bodyParser from "body-parser";
 import {
+  randomBytes,
   Signature,
   encodeBase64,
   zeroPadValue,
@@ -52,9 +53,8 @@ const notify = (hash: string, event: string, message: string) => {
   }
 };
 
-
 const PATH = process.env.APP_PATH || `${__dirname}/..`;
-const FS_PATH = process.env.FILESYSTEM_PATH || `${PATH}/drawings`
+const FS_PATH = process.env.FILESYSTEM_PATH || `${PATH}/drawings`;
 const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
@@ -68,6 +68,46 @@ const contract = new Contract(
       "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d"
   )
 );
+
+const invitationMap = new Map<
+  string,
+  { address: string; name: string; language: string }
+>();
+
+const mask = BigInt(process.env.MASK || '');
+
+if (mask) {
+  const dc = new TextDecoder();
+  const trim = (input: Uint8Array, seek = 0): Uint8Array => {
+    if (input[seek] !== 0) return input.slice(seek);
+    return trim(input, seek + 1);
+  };
+
+  filesystem
+    .loadFile(
+      "0xe1ec101432ae124588a9a948060128d29b8978d93d269a1cc21c91f22cdda81c"
+    )
+    .then((buffer) => {
+      if (!buffer) throw new Error("invitations not found");
+      for (let i = 0; i < buffer.byteLength; i += 128) {
+        const data = new Uint8Array(buffer.slice(i, i + 128));
+        const asArray = getBytes(
+          `0x${(BigInt(hexlify(data)) ^ mask).toString(16)}`
+        );
+        const seek = 56 - (128 - asArray.length);
+
+        const name = dc.decode(asArray.slice(0, seek));
+        const address = dc.decode(trim(asArray.slice(seek, seek + 68)));
+        const language = dc.decode(trim(asArray.slice(seek + 68, seek + 72)));
+
+        invitationMap.set(sha256(data).slice(2), {
+          name,
+          address,
+          language,
+        });
+      }
+    });
+}
 
 Promise.all([database.initialize(), contract.initialize()])
   .then(() => endpoints(database, filesystem, paint, clock, contract))
@@ -446,7 +486,9 @@ Promise.all([database.initialize(), contract.initialize()])
           return res.sendStatus(404);
 
         if (handoverRequest && Object.keys(req.query).length === 0) {
-          handoverRequest.currentResponse.write(`event: handover-close\ndata: null\n\n`);
+          handoverRequest.currentResponse.write(
+            `event: handover-close\ndata: null\n\n`
+          );
           handoverRequest.currentResponse.end();
           handoverRequest = undefined;
         }
@@ -525,6 +567,52 @@ Promise.all([database.initialize(), contract.initialize()])
         } catch (e) {
           return processError(res, e as Error);
         }
+      });
+
+      app.post(
+        `${BASE_URL}/invitations/:invitationId`,
+        bodyParser.urlencoded({ limit: 256, extended: true }),
+        (req, res) => {
+          if (!new Set(invitationMap.keys()).has(req.params.invitationId))
+            return res.sendStatus(404);
+
+          database
+            .insertInvitationResponse(req.params.invitationId, {
+              rsvp: req.body.rsvp === "accept",
+              attendees: req.body.attendees,
+              mealPreferences: req.body.mealPreferences,
+              songRequest: req.body.songRequest,
+              comment: req.body.comment,
+            })
+            .then(() => res.sendStatus(200))
+            .catch((e) => {
+              console.log(e);
+              res.sendStatus(400);
+            });
+        }
+      );
+
+      app.get(`${BASE_URL}/invitations/`, (req, res) => {
+        database
+          .getInvitationResponses()
+          .then((responses) => res.send(responses));
+      });
+
+      app.get(`${BASE_URL}/invitations/:invitationId`, (req, res) => {
+        if (!new Set(invitationMap.keys()).has(req.params.invitationId))
+          return res.sendStatus(404);
+        database
+          .getInvitationResponse(req.params.invitationId)
+          .then((response) =>
+            response ? res.send(response) : res.sendStatus(404)
+          );
+      });
+
+      app.get(`${BASE_URL}/verify-invitation/:invitationId`, (req, res) => {
+        if (!new Set(invitationMap.keys()).has(req.params.invitationId))
+          return res.sendStatus(404);
+
+        return res.send(invitationMap.get(req.params.invitationId));
       });
 
       app.post(

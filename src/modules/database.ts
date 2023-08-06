@@ -357,12 +357,31 @@ ORDER BY created_at ASC`
     );
   }
 
+  insertInvitationResponse(invitationId: string, responseData: any) {
+    return this.upsert(
+      `INSERT INTO wedding_rsvp (invitation_id, rsvp, attendees, meal_preferences, song_request, comments, recorded_at) VALUES('${invitationId}', ${responseData.rsvp}, '${responseData.attendees}', '${responseData.mealPreferences}', '${responseData.songRequest}', '${responseData.comment}', unixepoch())
+      ON CONFLICT (invitation_id) DO UPDATE SET rsvp='${responseData.rsvp}', attendees='${responseData.attendees}', song_request='${responseData.songRequest}', meal_preferences='${responseData.mealPreferences}', comments='${responseData.comment}', modified_at=unixepoch()`
+    );
+  }
+
+  getInvitationResponses() {
+    return this.getAll(`SELECT * FROM wedding_rsvp`);
+  }
+
+  getInvitationResponse(invitationId: string) {
+    return this.get(`SELECT * FROM wedding_rsvp WHERE invitation_id='${invitationId}'`);
+  }
+
   getPreviousCycleTransactions() {}
 
   private construct() {
     return new Promise((resolve) => {
       this.db.serialize(() => {
         // we don't necessarily need to keep track of users only those that are email registered
+        this.db.run(
+          "CREATE TABLE IF NOT EXISTS wedding_rsvp (invitation_id TEXT PRIMARY KEY, rsvp BOOLEAN, attendees TEXT, meal_preferences TEXT, song_request TEXT, comments TEXT, recorded_at INTEGER, modified_at INTEGER)"
+        );
+
         this.db.run(
           "CREATE TABLE IF NOT EXISTS users (identity TEXT PRIMARY KEY, email TEXT, account_id TEXT, tokens INTEGER, last_login INTEGER, updated_at INTEGER, nickname TEXT, created_at INTEGER, is_vip BOOLEAN, is_verified BOOLEAN, invited_by TEXT, verification_code INTEGER)"
         );
