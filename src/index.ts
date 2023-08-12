@@ -672,7 +672,7 @@ Promise.all([database.initialize(), contract.initialize()])
 
           database
             .insertInvitationResponse(req.params.invitationId, {
-              rsvp: req.body.rsvp === "accept",
+              rsvp: req.body.rsvp === "accept" ? 1 : 0,
               attendees: req.body.attendees,
               mealPreferences: req.body.mealPreferences,
               songRequest: req.body.songRequest,
