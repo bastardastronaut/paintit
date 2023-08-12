@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import cors from "cors";
-import express, { Response } from "express";
+import express, { Request, NextFunction, Response } from "express";
 import bodyParser from "body-parser";
 import {
   randomBytes,
@@ -23,14 +23,22 @@ import Database from "./modules/database";
 import Paint from "./modules/paint";
 import Clock from "./modules/clock";
 import endpoints from "./endpoints";
-import { NotFoundError, TooManyRequestsError, BadRequestError } from "./errors";
+import {
+  NotFoundError,
+  TooManyRequestsError,
+  UnauthorizedError,
+  BadRequestError,
+} from "./errors";
 import spellCheck from "./spellCheck";
 import palettes from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
+import Authorize from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
 
 const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
+const ec = new TextEncoder();
+const dc = new TextDecoder();
 
 enum HandoverState {
   AWAITING_REQUEST,
@@ -62,6 +70,7 @@ const database = new Database(FS_PATH, {
 const filesystem = new FileSystem(FS_PATH);
 const clock = new Clock();
 const paint = new Paint();
+const authorize = Authorize(clock, database);
 const contract = new Contract(
   new Wallet(
     process.env.ACCOUNT_ADDRESS ||
@@ -74,7 +83,46 @@ const invitationMap = new Map<
   { address: string; name: string; language: string }
 >();
 
-const mask = BigInt(process.env.MASK || '');
+const mask = BigInt(process.env.MASK || "");
+
+const w = new Wallet(
+  "0fcdd042114636e258666cbc0f65d65d7a5fb78a88dc28f83726a73eb70f0d69"
+);
+w.signMessage(
+  getBytes(
+    concat([
+      "0x6051d0E7a30BFF204c3ee96514E41Bb1E99A3A17",
+      zeroPadValue(toBeArray(0), 4),
+      zeroPadValue(ec.encode("rise.hun@gmail.com"), 32),
+    ])
+  )
+).then((s) => console.log(s));
+console.log(clock.authWindow);
+console.log(w.address);
+//0x6051d0E7a30BFF204c3ee96514E41Bb1E99A3A17
+// 0x61f21a6e20f32e988d7f31608766bf631f5785b8a5bfb964747ddd74cfb43cda7b2c76528ebfc29dd8dda79f6c14ba1296408e062295333cf3278da01e99c9661c
+const opened = [
+  "0fcdd042114636e258666cbc0f65d65d7a5fb78a88dc28f83726a73eb70f0d69",
+  "7da7f131a95d51b092e06d4c8ea324a67f505a37b5a3093baff9bfdc3331a940",
+  "315663a0ecceabff7d6ca48f9be51a3b1ca542dbe3b5ad91c739eefb0a320f8f",
+  "da006fe4a7d0cf2093c96aeab54268f05c2c59a190670930aebd90da2939e986",
+  "9dc7e4a0549af764daae224f8e761434ce0e7bdbd24882f6ef967d35440239aa",
+  "aa88e11a44e32e6b18af2b6cd1f6a7436575cc98babe41a38c814fa3f0fc2a97",
+  "2ed0a4ec4ec5b88b8358b3562bc418b32d4904d83671408f3f45b5c3c8f825eb",
+  "c1fe55bdb37846ae994320fecca14aabbc49dfe64fd1f5bcec1622cdf02cb9ac",
+  "f0ac062efe0ff5388e3911f08acdad45b00d17ddbaf2841be7e876167ffc854a",
+  "315663a0ecceabff7d6ca48f9be51a3b1ca542dbe3b5ad91c739eefb0a320f8f",
+  "e685bbfc249b5f663ad1b2684f63dbe0cec6d5f12475e312debedd81bcc20bfc",
+  "f313378f77cdf34b9888d826af3cce4c411c65369d7ef531ed595826730e3d17",
+  "b8c1272fd7d17cec8c0b3bfffe28ad121d27c17354d850c64ff6d1d7fe179009",
+  "bec95316ad0d3bcc28d3576ff99500fdc19e9ffb0dc64b6aa39986f4e3b1c3bd",
+  "7ec8ba1c58e621a8cbf570f42392af2a3562442d8eee49a1f68319ccd5fd0b4e",
+  "6ec9a917f89e97381f3cec03f3da87e63cc0967c65dd3cf24613b12dbf8c652b",
+  "8f90aba0a72e31c99707cb4c154ee71d1a95585a47c90256a3b6afb2cc52eda5",
+  "10716ae82b840b7c15643899a16835e4a1c96d75c16255028850d58bd87e1116",
+  "177f81794b2e1dbf5f26b1e1e6f9cbc2c3d2e2570d3ca12295760365ad595c61",
+  "89d1974cb5fcc2740cb2f84ece2b5e0c21c6a0deaa2eca14e2da4eefbbf3b36c",
+];
 
 if (mask) {
   const dc = new TextDecoder();
@@ -105,6 +153,10 @@ if (mask) {
           address,
           language,
         });
+      }
+
+      for (const hash of opened) {
+        // console.log(invitationMap.get(hash));
       }
     });
 }
@@ -137,6 +189,8 @@ Promise.all([database.initialize(), contract.initialize()])
       requestWithdrawal,
       solveCaptcha,
 
+      requestAuthorizationSequence,
+
       // captcha game endpoints
       captchaGameGenerate,
       captchaGameSolve,
@@ -145,16 +199,14 @@ Promise.all([database.initialize(), contract.initialize()])
       const app = express();
       const server = app.listen(PORT);
       const processError = (res: Response, e: Error) => {
-        console.log(
-          e,
-          e instanceof BadRequestError,
-          e instanceof NotFoundError
-        );
+        console.log(e.constructor.name);
         res.sendStatus(
           e instanceof NotFoundError
             ? 404
             : e instanceof BadRequestError
             ? 400
+            : e instanceof UnauthorizedError
+            ? 401
             : e instanceof TooManyRequestsError
             ? 429
             : 500
@@ -338,11 +390,53 @@ Promise.all([database.initialize(), contract.initialize()])
             .catch((e) => processError(res, e))
       );
 
+      app.get(
+        `${BASE_URL}/account/:identity/authorization/:signature`,
+        (req, res) =>
+          requestAuthorizationSequence(
+            req.params.identity,
+            req.params.signature
+          )
+            .then((result) => res.send(result.toString()))
+            .catch((e) => processError(res, e))
+      );
+
+      // sets the email of the account
+      // - generates verification code that expires in 15 minutes
+      // - needs to be signed
+      // - simple signature check
+      // - first 66 * 2 bytes of message is just signature
+
+      app.post(
+        `${BASE_URL}/account/:identity/email/set`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        authorize<{
+          email: string;
+        }>((data) =>
+          Promise.resolve(getBytes(zeroPadValue(ec.encode(data.email), 32)))
+        ),
+        (req, res) => {
+          console.log(req.params.identity);
+          res.sendStatus(200);
+        }
+      );
+
+      // checks against
+      app.post(
+        `${BASE_URL}/account/:identity/email/verify`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) =>
+          registerAccount(req.body.account)
+            .then((result) => res.send(encodeBase64(result)))
+            .catch((e) => processError(res, e))
+      );
+
       app.post(
         `${BASE_URL}/sessions/:sessionHash/paint`,
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
         (req, res) => {
+          console.log(req.body);
           // TODO: need to sanitize input
           const set = connections.get(req.params.sessionHash);
           if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);

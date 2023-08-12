@@ -16,7 +16,7 @@ import FileSystem from "./modules/filesystem";
 import Clock from "./modules/clock";
 import Contract from "./modules/contract";
 import Paint from "./modules/paint";
-import { NotFoundError, BadRequestError } from "./errors";
+import { NotFoundError, UnauthorizedError, BadRequestError } from "./errors";
 import Account from "./modules/account";
 import Session from "./modules/session";
 import Transactions from "./modules/transactions";
@@ -150,6 +150,25 @@ export default async (
     },
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
+
+    requestAuthorizationSequence: (identity: string, signature: string) => {
+      if (
+        identity !==
+        verifyMessage(
+          getBytes(
+            concat([identity, zeroPadValue(toBeArray(clock.authWindow), 4)])
+          ),
+          signature
+        )
+      ) {
+        return Promise.reject(new UnauthorizedError());
+      }
+
+      return database
+        .getUserAuthorization(identity)
+        .then((result) => (result ? result.sequence : 0));
+    },
+
     solveCaptcha: (challengeId: string, solution: number) =>
       account.solveCaptcha(challengeId, solution),
 

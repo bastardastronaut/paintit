@@ -369,7 +369,24 @@ ORDER BY created_at ASC`
   }
 
   getInvitationResponse(invitationId: string) {
-    return this.get(`SELECT * FROM wedding_rsvp WHERE invitation_id='${invitationId}'`);
+    return this.get(
+      `SELECT * FROM wedding_rsvp WHERE invitation_id='${invitationId}'`
+    );
+  }
+
+  // security is sort of compromised here
+  // this being public leaks information, can do authwindow check?
+  getUserAuthorization(identity: string) {
+    return this.get<{ sequence: number }>(
+      `SELECT sequence FROM user_authorization WHERE identity='${identity}'`
+    );
+  }
+
+  setUserAuthorization(identity: string, sequence: number) {
+    return this.upsert(
+      `INSERT INTO user_authorization (identity, sequence) VALUES('${identity}', ${sequence})
+      ON CONFLICT (identity) DO UPDATE SET sequence=${sequence}`
+    );
   }
 
   getPreviousCycleTransactions() {}
@@ -434,6 +451,10 @@ ORDER BY created_at ASC`
         // will need something like bidding, or let just people do it on opensea?
         this.db.run(
           "CREATE TABLE IF NOT EXISTS draw_votes (hash TEXT, value INTEGER, identity TEXT, signature TEXT, PRIMARY KEY(hash, identity))"
+        );
+
+        this.db.run(
+          "CREATE TABLE IF NOT EXISTS user_authorization (identity TEXT PRIMARY KEY, sequence INTEGER)"
         );
       });
 
