@@ -137,6 +137,7 @@ if (mask) {
     )
     .then((buffer) => {
       if (!buffer) throw new Error("invitations not found");
+      const names = [];
       for (let i = 0; i < buffer.byteLength; i += 128) {
         const data = new Uint8Array(buffer.slice(i, i + 128));
         const asArray = getBytes(
@@ -147,6 +148,7 @@ if (mask) {
         const name = dc.decode(asArray.slice(0, seek));
         const address = dc.decode(trim(asArray.slice(seek, seek + 68)));
         const language = dc.decode(trim(asArray.slice(seek + 68, seek + 72)));
+        if (language === "ru") names.push(name);
 
         invitationMap.set(sha256(data).slice(2), {
           name,
@@ -155,8 +157,10 @@ if (mask) {
         });
       }
 
+      // console.log(names)
+
       for (const hash of opened) {
-        // console.log(invitationMap.get(hash));
+        //  console.log(invitationMap.get(hash));
       }
     });
 }
@@ -222,19 +226,6 @@ Promise.all([database.initialize(), contract.initialize()])
           .catch((e) => processError(res, e));
       });
 
-      app.post(
-        `${BASE_URL}/captcha/:challengeId`,
-        bodyParser.urlencoded({ limit: 128, extended: true }),
-        (req, res) => {
-          return solveCaptcha(
-            req.params.challengeId,
-            parseInt(req.body.solution)
-          )
-            .then((result) => res.send(200))
-            .catch((e) => processError(res, e));
-        }
-      );
-
       app.get(`${BASE_URL}/palettes`, (req, res) => {
         res.send(palettes);
       });
@@ -246,7 +237,6 @@ Promise.all([database.initialize(), contract.initialize()])
       });
 
       app.get(`${BASE_URL}/archived-sessions`, (req, res) => {
-        // TODO: watch for SQL injection!
         getArchivedSessions(
           parseInt(req.query.limit as string) || 5,
           parseInt(req.query.offset as string) || 0
@@ -381,50 +371,11 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
+      // TODO: watch for SQL injection!
+
       app.post(
         `${BASE_URL}/create-account`,
         bodyParser.urlencoded({ limit: 64, extended: true }),
-        (req, res) =>
-          registerAccount(req.body.account)
-            .then((result) => res.send(encodeBase64(result)))
-            .catch((e) => processError(res, e))
-      );
-
-      app.get(
-        `${BASE_URL}/account/:identity/authorization/:signature`,
-        (req, res) =>
-          requestAuthorizationSequence(
-            req.params.identity,
-            req.params.signature
-          )
-            .then((result) => res.send(result.toString()))
-            .catch((e) => processError(res, e))
-      );
-
-      // sets the email of the account
-      // - generates verification code that expires in 15 minutes
-      // - needs to be signed
-      // - simple signature check
-      // - first 66 * 2 bytes of message is just signature
-
-      app.post(
-        `${BASE_URL}/account/:identity/email/set`,
-        bodyParser.urlencoded({ limit: 192, extended: true }),
-        authorize<{
-          email: string;
-        }>((data) =>
-          Promise.resolve(getBytes(zeroPadValue(ec.encode(data.email), 32)))
-        ),
-        (req, res) => {
-          console.log(req.params.identity);
-          res.sendStatus(200);
-        }
-      );
-
-      // checks against
-      app.post(
-        `${BASE_URL}/account/:identity/email/verify`,
-        bodyParser.urlencoded({ limit: 192, extended: true }),
         (req, res) =>
           registerAccount(req.body.account)
             .then((result) => res.send(encodeBase64(result)))
@@ -465,6 +416,8 @@ Promise.all([database.initialize(), contract.initialize()])
             colorIndex
           )
             .then(({ userMetrics, updatedRevision, paintCost, paintLeft }) => {
+              // timeout decreases for email verified users
+              // further decreases for VIP users
               const verificationMultiplier = userMetrics.is_vip
                 ? 0.5
                 : userMetrics.is_verified
@@ -511,6 +464,7 @@ Promise.all([database.initialize(), contract.initialize()])
         bodyParser.urlencoded({ limit: 256, extended: true }),
         (req, res) => {
           const { text, signature, identity } = req.body;
+          if (blockedUsers.has(identity)) return res.sendStatus(429);
           // basically all POST endpoints need rate limiting
           // prompts should not be allowed to be changed only every 5-10 seconds max
           postSessionPrompt(req.params.sessionHash, identity, text, signature)
@@ -527,8 +481,14 @@ Promise.all([database.initialize(), contract.initialize()])
               );
 
               notify(req.params.sessionHash, "new-prompt", message);
+
+              blockedUsers.add(identity);
+              return clock.in(5);
             })
-            .catch((e) => processError(res, e));
+            .catch((e) => processError(res, e))
+            .finally(() => {
+              blockedUsers.delete(identity);
+            });
         }
       );
 
@@ -538,7 +498,12 @@ Promise.all([database.initialize(), contract.initialize()])
       // # of users * second
       // 5 users need to wait for 5 seconds
       // 100 users need to wait for a minute and a half
-      app.get(`${BASE_URL}/sessions/:sessionHash/updates/`, (req, res) => {
+      // email verified users will always take precedence
+      // the problem is: how to kick someone out of the room in favor of email people?
+      // we can simply limit it at 100
+      // but give another 50/100 to email people
+      // and another 100 for VIP people
+      app.get(`${BASE_URL}/sessions/:sessionHash/updates`, (req, res) => {
         // need to have the correct auth window
         // console.log(req.params.signature);
         // need to have signature and verify user, do we ?
@@ -614,6 +579,50 @@ Promise.all([database.initialize(), contract.initialize()])
         req.on("close", close);
       });
 
+      // -- Authorization --
+
+      app.get(
+        `${BASE_URL}/account/:identity/authorization/:signature`,
+        (req, res) =>
+          requestAuthorizationSequence(
+            req.params.identity,
+            req.params.signature
+          )
+            .then((result) => res.send(result.toString()))
+            .catch((e) => processError(res, e))
+      );
+
+      // sets the email of the account
+      // - generates verification code that expires in 15 minutes
+      // - needs to be signed
+      // - simple signature check
+      // - first 66 * 2 bytes of message is just signature
+
+      app.post(
+        `${BASE_URL}/account/:identity/email/set`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        authorize<{
+          email: string;
+        }>((data) =>
+          Promise.resolve(getBytes(zeroPadValue(ec.encode(data.email), 32)))
+        ),
+        (req, res) => {
+          console.log(req.params.identity);
+          // send email
+          res.sendStatus(200);
+        }
+      );
+
+      // checks against
+      app.post(
+        `${BASE_URL}/account/:identity/email/verify`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) =>
+          registerAccount(req.body.account)
+            .then((result) => res.send(encodeBase64(result)))
+            .catch((e) => processError(res, e))
+      );
+
       app.post(
         `${BASE_URL}/handover/:identity`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
@@ -635,16 +644,6 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      app.get(`${BASE_URL}/captcha/:identity/play`, (req, res) => {
-        try {
-          return res.send(
-            encodeBase64(captchaGameGenerate(req.params.identity))
-          );
-        } catch (e) {
-          return processError(res, e as Error);
-        }
-      });
-
       app.get(`${BASE_URL}/status`, (req, res) => {
         try {
           return res.send({
@@ -663,6 +662,14 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       });
 
+
+
+
+
+
+
+      // -- WEDDING INVITATION MODULE 
+      
       app.post(
         `${BASE_URL}/invitations/:invitationId`,
         bodyParser.urlencoded({ limit: 256, extended: true }),
@@ -709,6 +716,18 @@ Promise.all([database.initialize(), contract.initialize()])
         return res.send(invitationMap.get(req.params.invitationId));
       });
 
+      // -- Captchas --
+
+      app.get(`${BASE_URL}/captcha/:identity/play`, (req, res) => {
+        try {
+          return res.send(
+            encodeBase64(captchaGameGenerate(req.params.identity))
+          );
+        } catch (e) {
+          return processError(res, e as Error);
+        }
+      });
+
       app.post(
         `${BASE_URL}/captcha/:identity/solve`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
@@ -720,6 +739,19 @@ Promise.all([database.initialize(), contract.initialize()])
           )
             .then((result) => res.send(result))
             .catch((e) => processError(res, e))
+      );
+
+      app.post(
+        `${BASE_URL}/captcha/:challengeId`,
+        bodyParser.urlencoded({ limit: 128, extended: true }),
+        (req, res) => {
+          return solveCaptcha(
+            req.params.challengeId,
+            parseInt(req.body.solution)
+          )
+            .then((result) => res.send(200))
+            .catch((e) => processError(res, e));
+        }
       );
 
       app.use(express.static(`${PATH}/public`));

@@ -20,10 +20,10 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 900;
-const ITERATION_COUNT = 5;
+const ITERATION_LENGTH = 6 * 3600;
+const ITERATION_COUNT = 4;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
-const DEFAULT_PAINT = 200;
+const DEFAULT_PAINT = 1000;
 const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
 const DEFAULT_PAINT_VIP = 3000;
 const INVITATION_BONUS = 100;
@@ -558,7 +558,6 @@ export default async (
       const prompt = _prompt.trim();
       const words = prompt.split(" ");
       if (
-        words.length > 5 ||
         prompt.length > 32 ||
         !(await spellCheck(prompt))
       ) {
@@ -597,8 +596,11 @@ export default async (
             : currentSize;
 
         if (isComplete) {
-          await database.updateSessionPrompt(sessionHash, prompt, isComplete);
-          await database.deleteSessionPrompts(sessionHash);
+          await Promise.all([
+            database.updateSessionPrompt(sessionHash, prompt, isComplete),
+            database.deleteSessionPrompts(sessionHash),
+          ]);
+
           const promptSessions = await database.getPromptSessions();
 
           if (promptSessions.length === 0) {

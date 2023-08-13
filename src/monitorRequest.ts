@@ -15,6 +15,12 @@ export const requests = new Map<RequestType, Map<string, number>>([
   [RequestType.Create, new Map()],
 ]);
 
+/*
+ * what you really want is 
+ * global request / second MAX 10
+ * for IPs request / minute MAX 100
+ * */
+
 const monitorRequest =
   (clock: Clock) => (req: Request, res: Response, next: NextFunction) => {
     // requests are reset every 5 minutes
