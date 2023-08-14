@@ -148,7 +148,8 @@ if (mask) {
         const name = dc.decode(asArray.slice(0, seek));
         const address = dc.decode(trim(asArray.slice(seek, seek + 68)));
         const language = dc.decode(trim(asArray.slice(seek + 68, seek + 72)));
-        if (language === "ru") names.push(name);
+        console.log(name)
+        if (language === "hu") names.push(name);
 
         invitationMap.set(sha256(data).slice(2), {
           name,
@@ -163,6 +164,35 @@ if (mask) {
         //  console.log(invitationMap.get(hash));
       }
     });
+    /*
+  const inv = { address: "Dear Adam", language: "en", name: "Adam" };
+
+  const data = concat([
+    zeroPadValue(ec.encode(inv.name), 56),
+    zeroPadValue(ec.encode(inv.address), 68),
+    zeroPadValue(ec.encode(inv.language), 4),
+  ]);
+
+  const FINAL = `0x${(BigInt(data) ^ mask).toString(16)}`
+
+  console.log(sha256(FINAL))
+  // filesystem.saveFile(getBytes(FINAL))
+
+    const asArray = getBytes(
+      `0x${(BigInt(hexlify(FINAL)) ^ mask).toString(16)}`
+    );
+
+  const D =  `0x${(BigInt(data) ^ mask).toString(16)}`
+  // console.log(D)
+
+ 
+        const seek = 56 - (128 - asArray.length);
+
+        const name = dc.decode(asArray.slice(0, seek));
+        const address = dc.decode(trim(asArray.slice(seek, seek + 68)));
+        const language = dc.decode(trim(asArray.slice(seek + 68, seek + 72)));
+
+        console.log(name, address, language)*/
 }
 
 Promise.all([database.initialize(), contract.initialize()])
@@ -662,14 +692,8 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       });
 
+      // -- WEDDING INVITATION MODULE
 
-
-
-
-
-
-      // -- WEDDING INVITATION MODULE 
-      
       app.post(
         `${BASE_URL}/invitations/:invitationId`,
         bodyParser.urlencoded({ limit: 256, extended: true }),
