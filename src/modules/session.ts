@@ -23,7 +23,7 @@ import { getDistance } from "./utils";
 const ITERATION_LENGTH = 6 * 3600;
 const ITERATION_COUNT = 4;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
-const DEFAULT_PAINT = 1000;
+const DEFAULT_PAINT = 2000;
 const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
 const DEFAULT_PAINT_VIP = 3000;
 const INVITATION_BONUS = 100;
