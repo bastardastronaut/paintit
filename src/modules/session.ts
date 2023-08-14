@@ -44,11 +44,12 @@ const DIMENSIONS = [
 // for POC
 //const DIMENSIONS = [[16, 16]];
 const DIMENSIONS = [
+  /*
   [
     [32, 24],
     [24, 32],
   ],
-
+*/
   [
     [64, 48],
     [48, 64],
@@ -269,6 +270,9 @@ export default async (
             .forEach((r) => filesystem.removeFile(r.revision));
           revisionCaches.delete(s.hash);
         }
+
+        // need to get all signatures + history and remove from database
+
         return null;
       });
   };
