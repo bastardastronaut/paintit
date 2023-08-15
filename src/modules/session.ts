@@ -6,6 +6,7 @@ import {
   toBeArray,
   getBytes,
   toNumber,
+  hexlify,
   randomBytes,
 } from "ethers";
 import { readFileSync } from "fs";
@@ -200,12 +201,68 @@ export default async (
         return canvas;
       });
 
+  // loads activity based on whether the session has finished or not
+  const loadSessionActivity = (
+    sessionHash: string,
+    identity?: string
+  ): Promise<
+    Array<{
+      createdAt?: number;
+      identity?: string;
+      revision?: string;
+      positionIndex: number;
+      colorIndex: number;
+    }>
+  > =>
+    loadSession(sessionHash).then((session) =>
+      session.iteration === session.maxIterations
+        ? filesystem.loadFile(sessionHash).then((art) => {
+            if (!art) return [];
+            const metadata = new Uint8Array(art.slice(0, 75));
+            const rows = toNumber(metadata.slice(64, 66));
+            const columns = toNumber(metadata.slice(66, 68));
+            let seek = 75 + rows * columns;
+            const signatures = toNumber(art.slice(seek, seek + 4));
+            seek += signatures * 85 + 4;
+
+            const result = [];
+            for (let i = seek; i < art.length; i += 63) {
+              const createdAt = toNumber(art.slice(i, i + 6));
+              const identity = hexlify(
+                new Uint8Array(art.slice(i + 38, i + 58))
+              );
+              const colorIndex = toNumber(art.slice(i + 58, i + 59));
+              const positionIndex = toNumber(art.slice(i + 59, i + 63));
+              result.push({ createdAt, colorIndex, positionIndex, identity });
+            }
+
+            return result;
+          })
+        : database
+            .getActivityByDrawing(sessionHash, identity)
+
+            .then((activity) =>
+              identity
+                ? activity.map((a) => ({
+                    revision: a.revision,
+                    positionIndex: a.position_index,
+                    colorIndex: a.color_index,
+                  }))
+                : activity.map((a) => ({
+                    identity: a.identity,
+                    createdAt: a.created_at,
+                    positionIndex: a.position_index,
+                    colorIndex: a.color_index,
+                  }))
+            )
+    );
+
   const loadSessionContributions = (sessionHash: string) => {
     return Promise.all([
       loadSession(sessionHash),
       filesystem.loadFile(sessionHash),
       loadSessionCanvas(sessionHash),
-      database.getActivityByDrawing(sessionHash),
+      loadSessionActivity(sessionHash),
     ]).then(([s, canvas, _finalCanvas, activityLog]) => {
       if (!canvas) throw new NotFoundError();
       const finalCanvas = new Uint8Array(_finalCanvas);
@@ -218,24 +275,24 @@ export default async (
 
       for (const activity of activityLog) {
         contributions.set(
-          activity.identity,
+          activity.identity as string,
           ((50 -
             getColorDiff(
               s.paletteIndex,
-              activity.color_index,
-              finalCanvas[activity.position_index]
+              activity.colorIndex,
+              finalCanvas[activity.positionIndex]
             )) *
             getPaintCost(
               s.paletteIndex,
-              historyLengths.get(activity.position_index) || 0,
-              activity.color_index,
-              canvasArray[activity.position_index]
+              historyLengths.get(activity.positionIndex) || 0,
+              activity.colorIndex,
+              canvasArray[activity.positionIndex]
             )) /
             50 +
-            (contributions.get(activity.identity) || 0)
+            (contributions.get(activity.identity as string) || 0)
         );
 
-        canvasArray[activity.position_index] = activity.color_index;
+        canvasArray[activity.positionIndex] = activity.colorIndex;
       }
 
       return Array.from(contributions.entries()).sort(([, a], [, b]) =>
@@ -599,47 +656,7 @@ export default async (
     },
 
     // TODO: we will also need to send over full history but without revision for replayability
-    loadSessionActivity: (sessionHash: string, identity?: string) => {
-      return loadSession(sessionHash).then((session) =>
-        session.iteration === session.maxIterations
-          ? filesystem.loadFile(sessionHash).then((art) => {
-              if (!art) return [];
-              const metadata = new Uint8Array(art.slice(0, 75));
-              const rows = toNumber(metadata.slice(64, 66));
-              const columns = toNumber(metadata.slice(66, 68));
-              let seek = 75 + rows * columns;
-              const signatures = toNumber(art.slice(seek, seek + 4));
-              seek += signatures * 85 + 4;
-
-              const result = [];
-              for (let i = seek; i < art.length; i += 63) {
-                const createdAt = toNumber(art.slice(i, i + 6));
-                const colorIndex = toNumber(art.slice(i + 58, i + 59));
-                const positionIndex = toNumber(art.slice(i + 59, i + 63));
-                result.push({ createdAt, colorIndex, positionIndex });
-              }
-
-              return result;
-            })
-          : database
-              .getActivityByDrawing(sessionHash, identity)
-
-              .then((activity) =>
-                identity
-                  ? activity.map((a) => ({
-                      revision: a.revision,
-                      positionIndex: a.position_index,
-                      colorIndex: a.color_index,
-                    }))
-                  : activity.map((a) => ({
-                      createdAt: a.created_at,
-                      positionIndex: a.position_index,
-                      colorIndex: a.color_index,
-                    }))
-              )
-      );
-    },
-
+    loadSessionActivity,
     loadSessionPaint,
 
     loadSessionPromptByIdentity: (sessionHash: string, identity: string) => {
