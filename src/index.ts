@@ -67,16 +67,15 @@ const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
 });
+const masterWallet = new Wallet(
+  process.env.ACCOUNT_ADDRESS ||
+    "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d"
+);
 const filesystem = new FileSystem(FS_PATH);
 const clock = new Clock();
 const paint = new Paint();
 const authorize = Authorize(clock, database);
-const contract = new Contract(
-  new Wallet(
-    process.env.ACCOUNT_ADDRESS ||
-      "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d"
-  )
-);
+const contract = new Contract(masterWallet);
 
 const invitationMap = new Map<
   string,
@@ -148,7 +147,7 @@ if (mask) {
         const name = dc.decode(asArray.slice(0, seek));
         const address = dc.decode(trim(asArray.slice(seek, seek + 68)));
         const language = dc.decode(trim(asArray.slice(seek + 68, seek + 72)));
-        console.log(name)
+        console.log(name);
         if (language === "hu") names.push(name);
 
         invitationMap.set(sha256(data).slice(2), {
@@ -164,7 +163,7 @@ if (mask) {
         //  console.log(invitationMap.get(hash));
       }
     });
-    /*
+  /*
   const inv = { address: "Dear Adam", language: "en", name: "Adam" };
 
   const data = concat([

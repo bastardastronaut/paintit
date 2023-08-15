@@ -20,7 +20,7 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 6 * 3600;
+const ITERATION_LENGTH = 15;
 const ITERATION_COUNT = 4;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 2000;
@@ -241,10 +241,63 @@ export default async (
       );
     });
   };
+  /*
+[1] {
+[1]   hash: '0x1319d6772a39d8733e35468cdda59e2259b3e35ba06bea393d0bce37b4309367',
+[1]   session_type: 0,
+[1]   rows: 48,
+[1]   columns: 72,
+[1]   palette_index: 2,
+[1]   revision: '0xb9dabe3f8432c801b2b7d4243c8152e0939162e209fdac33e93beb3fd4b8379a',
+[1]   prompt: 'furious delusions',
+[1]   current_iteration: 3,
+[1]   iteration_started_at: 1692044623,
+[1]   max_iterations: null,
+[1]   iteration_length: null,
+[1]   prompt_word_length: 5,
+[1]   created_at: 1692044355
+[1] }*/
 
   const finishSession = async (s: Session) => {
     // need to calculate contributions and create transactions
-    const contributions = await loadSessionContributions(s.hash);
+    const [activity, contributions, signatures, _initialCanvas] =
+      await Promise.all([
+        database.getActivityByDrawing(s.hash),
+        loadSessionContributions(s.hash),
+        database.getSignatures(s.hash),
+        filesystem.loadFile(s.hash),
+      ]);
+
+    if (!_initialCanvas) throw new Error("missing canvas");
+
+    const finalFile = getBytes(
+      concat([
+        s.hash,
+        s.revision,
+        zeroPadValue(toBeArray(s.rows), 2),
+        zeroPadValue(toBeArray(s.columns), 2),
+        zeroPadValue(toBeArray(s.created_at), 6),
+        toBeArray(s.palette_index),
+        // this is sort of dangerous
+        new Uint8Array(_initialCanvas),
+        zeroPadValue(toBeArray(signatures.length), 4),
+        ...signatures.map(({ signature, identity }) =>
+          concat([signature, identity])
+        ),
+        // so is this.
+        ...activity.map(
+          ({ created_at, position_index, color_index, identity, revision }) =>
+            concat([
+              zeroPadValue(toBeArray(created_at), 6),
+              revision,
+              identity,
+              toBeArray(color_index),
+              zeroPadValue(toBeArray(position_index), 4),
+            ])
+        ),
+      ])
+    );
+
     return database
       .progressSession(s.hash, ITERATION_COUNT)
       .then(() =>
@@ -273,8 +326,9 @@ export default async (
 
         // need to get all signatures + history and remove from database
 
-        return null;
-      });
+        return filesystem.saveFile(finalFile, s.hash);
+      })
+      .then(() => null);
   };
 
   const currentSessions = await database.getActiveSessions();
@@ -431,12 +485,17 @@ export default async (
         loadSession(sessionHash),
         loadSessionCanvas(sessionHash),
       ]).then(([s, canvas]) => {
+        const canvasArray = Array.from(
+          s.iteration === s.maxIterations
+            ? canvas.slice(75, 75 + s.rows * s.columns)
+            : canvas
+        );
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
         const imageData = createImageData(
           new Uint8ClampedArray(
-            Array.from(canvas).flatMap((i) => {
+            canvasArray.flatMap((i) => {
               const result = chroma(palettes[s.paletteIndex][i]).rgba();
               result[3] = 255;
 
@@ -468,10 +527,14 @@ export default async (
         database.getActivityByDrawing(sessionHash),
       ]).then(([s, canvas, activityLog]) => {
         if (!canvas) throw new NotFoundError();
+        const canvasArray = new Uint8Array(
+          s.iteration === s.maxIterations
+            ? canvas.slice(75, 75 + s.rows * s.columns)
+            : canvas
+        );
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
-        const canvasArray = new Uint8Array(canvas);
         const canvasToImageData = (_canvas: Uint8Array) =>
           createImageData(
             new Uint8ClampedArray(
@@ -561,10 +624,7 @@ export default async (
     ) => {
       const prompt = _prompt.trim();
       const words = prompt.split(" ");
-      if (
-        prompt.length > 32 ||
-        !(await spellCheck(prompt))
-      ) {
+      if (prompt.length > 32 || !(await spellCheck(prompt))) {
         throw new BadRequestError(`invalid prompt: ${prompt}`);
       }
 

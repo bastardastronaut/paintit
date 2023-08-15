@@ -11,10 +11,10 @@ export default class FileSystem {
     this.path = `${path}`;
   }
 
-  saveFile(canvas: Uint8Array) {
+  saveFile(canvas: Uint8Array, filename?: string) {
     //return Promise.resolve(_files.set(sha256(canvas), canvas));
-    console.log(`saving ${this.path}/${sha256(canvas)}`);
-    return writeFile(`${this.path}/${sha256(canvas)}`, canvas);
+    console.log(`saving ${this.path}/${filename || sha256(canvas)}`);
+    return writeFile(`${this.path}/${filename || sha256(canvas)}`, canvas);
   }
 
   loadFile(hash: string) {
