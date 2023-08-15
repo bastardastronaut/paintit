@@ -5,6 +5,7 @@ import {
   verifyMessage,
   toBeArray,
   getBytes,
+  toNumber,
   randomBytes,
 } from "ethers";
 import { readFileSync } from "fs";
@@ -190,6 +191,7 @@ export default async (
   const loadSessionCanvas = (sessionHash: string) =>
     loadSession(sessionHash)
       .then((s) => {
+        // not so simple
         return filesystem.loadFile(s.revision);
       })
       .then((canvas) => {
@@ -325,10 +327,18 @@ export default async (
         }
 
         // need to get all signatures + history and remove from database
+        // also mint the required tokens
 
         return filesystem.saveFile(finalFile, s.hash);
       })
-      .then(() => null);
+      .then(() => {
+        Promise.all([
+          database.deleteSessionPaint(s.hash),
+          database.deleteSessionActivity(s.hash),
+          database.deleteSessionSignatures(s.hash),
+        ]);
+        return null;
+      });
   };
 
   const currentSessions = await database.getActiveSessions();
@@ -590,22 +600,44 @@ export default async (
 
     // TODO: we will also need to send over full history but without revision for replayability
     loadSessionActivity: (sessionHash: string, identity?: string) => {
-      // this might pull MBs of data from the database
-      // consider applying a revision <> activity cache
-      return database
-        .getActivityByDrawing(sessionHash, identity)
-        .then((activity) =>
-          identity
-            ? activity.map((a) => ({
-                revision: a.revision,
-                positionIndex: a.position_index,
-                colorIndex: a.color_index,
-              }))
-            : activity.map((a) => ({
-                positionIndex: a.position_index,
-                colorIndex: a.color_index,
-              }))
-        );
+      return loadSession(sessionHash).then((session) =>
+        session.iteration === session.maxIterations
+          ? filesystem.loadFile(sessionHash).then((art) => {
+              if (!art) return [];
+              const metadata = new Uint8Array(art.slice(0, 75));
+              const rows = toNumber(metadata.slice(64, 66));
+              const columns = toNumber(metadata.slice(66, 68));
+              let seek = 75 + rows * columns;
+              const signatures = toNumber(art.slice(seek, seek + 4));
+              seek += signatures * 85 + 4;
+
+              const result = [];
+              for (let i = seek; i < art.length; i += 63) {
+                const createdAt = toNumber(art.slice(i, i + 6));
+                const colorIndex = toNumber(art.slice(i + 58, i + 59));
+                const positionIndex = toNumber(art.slice(i + 59, i + 63));
+                result.push({ createdAt, colorIndex, positionIndex });
+              }
+
+              return result;
+            })
+          : database
+              .getActivityByDrawing(sessionHash, identity)
+
+              .then((activity) =>
+                identity
+                  ? activity.map((a) => ({
+                      revision: a.revision,
+                      positionIndex: a.position_index,
+                      colorIndex: a.color_index,
+                    }))
+                  : activity.map((a) => ({
+                      createdAt: a.created_at,
+                      positionIndex: a.position_index,
+                      colorIndex: a.color_index,
+                    }))
+              )
+      );
     },
 
     loadSessionPaint,

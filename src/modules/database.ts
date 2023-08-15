@@ -269,6 +269,24 @@ export default class Database {
     );
   }
 
+  deleteSessionActivity(sessionHash: string) {
+    return this.upsert(
+      `DELETE FROM draw_activity WHERE hash='${sessionHash}'`
+    );
+  }
+
+  deleteSessionSignatures(sessionHash: string) {
+    return this.upsert(
+      `DELETE FROM draw_signatures WHERE hash='${sessionHash}'`
+    );
+  }
+
+  deleteSessionPaint(sessionHash: string) {
+    return this.upsert(
+      `DELETE FROM session_paint WHERE hash='${sessionHash}'`
+    );
+  }
+
   addUserEmail(identity: string, email: string, verificationCode: number) {
     return this.upsert(
       `UPDATE users SET email='${email}', verification_code=${verificationCode} WHERE identity='${identity}'`
