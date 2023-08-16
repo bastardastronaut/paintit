@@ -22,10 +22,11 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 15;
+const ITERATION_LENGTH = 3600 * 6;
 const ITERATION_COUNT = 4;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
-const DEFAULT_PAINT = 2000;
+const DEFAULT_PAINT = 200;
+const UNLOCKED_PAINT = 1000;
 const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
 const DEFAULT_PAINT_VIP = 3000;
 const INVITATION_BONUS = 100;
@@ -184,6 +185,7 @@ export default async (
         revision: s.revision,
         promptSize,
         prompt: s.prompt,
+        createdAt: s.created_at,
         maxIterations: ITERATION_COUNT,
       };
     });
@@ -218,6 +220,7 @@ export default async (
       session.iteration === session.maxIterations
         ? filesystem.loadFile(sessionHash).then((art) => {
             if (!art) return [];
+            console.log(sessionHash, art);
             const metadata = new Uint8Array(art.slice(0, 75));
             const rows = toNumber(metadata.slice(64, 66));
             const columns = toNumber(metadata.slice(66, 68));
@@ -231,8 +234,12 @@ export default async (
               const identity = hexlify(
                 new Uint8Array(art.slice(i + 38, i + 58))
               );
+              console.log(identity);
               const colorIndex = toNumber(art.slice(i + 58, i + 59));
+              console.log(colorIndex);
               const positionIndex = toNumber(art.slice(i + 59, i + 63));
+              if (positionIndex > rows * columns)
+                throw new Error(positionIndex.toString());
               result.push({ createdAt, colorIndex, positionIndex, identity });
             }
 
@@ -266,7 +273,11 @@ export default async (
     ]).then(([s, canvas, _finalCanvas, activityLog]) => {
       if (!canvas) throw new NotFoundError();
       const finalCanvas = new Uint8Array(_finalCanvas);
-      const canvasArray = new Uint8Array(canvas);
+      const canvasArray = new Uint8Array(
+        s.iteration === s.maxIterations
+          ? canvas.slice(75, 75 + s.rows * s.columns)
+          : canvas
+      );
 
       // also consider initial canvas in the calculation
 
@@ -274,6 +285,8 @@ export default async (
       const historyLengths = new Map<number, number>();
 
       for (const activity of activityLog) {
+        // TODO: REMOVE once tested
+        if (activity.positionIndex > s.rows * s.columns) continue;
         contributions.set(
           activity.identity as string,
           ((50 -
@@ -300,22 +313,6 @@ export default async (
       );
     });
   };
-  /*
-[1] {
-[1]   hash: '0x1319d6772a39d8733e35468cdda59e2259b3e35ba06bea393d0bce37b4309367',
-[1]   session_type: 0,
-[1]   rows: 48,
-[1]   columns: 72,
-[1]   palette_index: 2,
-[1]   revision: '0xb9dabe3f8432c801b2b7d4243c8152e0939162e209fdac33e93beb3fd4b8379a',
-[1]   prompt: 'furious delusions',
-[1]   current_iteration: 3,
-[1]   iteration_started_at: 1692044623,
-[1]   max_iterations: null,
-[1]   iteration_length: null,
-[1]   prompt_word_length: 5,
-[1]   created_at: 1692044355
-[1] }*/
 
   const finishSession = async (s: Session) => {
     // need to calculate contributions and create transactions
@@ -350,7 +347,7 @@ export default async (
               zeroPadValue(toBeArray(created_at), 6),
               revision,
               identity,
-              toBeArray(color_index),
+              zeroPadValue(toBeArray(color_index), 1),
               zeroPadValue(toBeArray(position_index), 4),
             ])
         ),
@@ -552,11 +549,7 @@ export default async (
         loadSession(sessionHash),
         loadSessionCanvas(sessionHash),
       ]).then(([s, canvas]) => {
-        const canvasArray = Array.from(
-          s.iteration === s.maxIterations
-            ? canvas.slice(75, 75 + s.rows * s.columns)
-            : canvas
-        );
+        const canvasArray = Array.from(canvas);
         const encoder = new GIFEncoder(s.columns, s.rows);
         const stream = encoder.createReadStream();
         const c = createCanvas(s.columns, s.rows);
@@ -747,6 +740,15 @@ export default async (
       }
     },
 
+    unlockMorePaint: (sessionHash: string, identity: string) =>
+      loadSessionPaint(sessionHash, identity).then((paintLeft) =>
+        database.updateUserPaint(
+          sessionHash,
+          identity,
+          paintLeft + UNLOCKED_PAINT
+        )
+      ),
+
     paint: async (
       sessionHash: string,
       identity: string,
@@ -819,6 +821,8 @@ export default async (
         ]);
 
         if (!session) throw new NotFoundError("session not found");
+        if (positionIndex < 0 || positionIndex > session.rows * session.columns)
+          throw new BadRequestError("incorrect position");
         if (
           session.current_iteration === 0 ||
           session.current_iteration === ITERATION_COUNT

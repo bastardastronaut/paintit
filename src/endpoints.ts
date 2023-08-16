@@ -1,4 +1,5 @@
 import {
+  randomBytes,
   Signature,
   encodeBase64,
   zeroPadValue,
@@ -79,7 +80,10 @@ export default async (
       // revision: string,
     ) => session.processNewPrompt(hash, identity, prompt, signature),
 
-    // TODO: static data validation and sanitization
+    postUnlockMorePaint: (sessionHash: string, identity: string) =>
+      transactions
+        .spendArt(identity, 10, sessionHash)
+        .then(() => session.unlockMorePaint(sessionHash, identity)),
 
     getSessions: () => session.loadSessions(),
     getArchivedSessions: (limit?: number, offset?: number) =>
@@ -125,20 +129,15 @@ export default async (
       signature: string
     ) => {},
 
-    requestWithdrawal: async (signature: string, _amount: string) => {
+    requestWithdrawal: async (
+      signature: string,
+      identity: string,
+      _amount: string
+    ) => {
       if (expiredSignatures.has(signature))
         throw new BadRequestError("signature expired");
 
       const amount = parseInt(_amount);
-
-      const message = getBytes(
-        concat([
-          zeroPadValue(toBeArray(clock.authWindow), 4),
-          zeroPadValue(toBeArray(amount), 32),
-        ])
-      );
-
-      const identity = verifyMessage(message, signature);
 
       expiredSignatures.add(signature);
 
@@ -151,7 +150,7 @@ export default async (
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
 
-    requestAuthorizationSequence: (identity: string, signature: string) => {
+    postAuthorizationSequence: (identity: string, signature: string) => {
       if (
         identity !==
         verifyMessage(
@@ -161,12 +160,10 @@ export default async (
           signature
         )
       ) {
-        return Promise.reject(new UnauthorizedError());
+        throw new UnauthorizedError();
       }
 
-      return database
-        .getUserAuthorization(identity)
-        .then((result) => (result ? result.sequence : 0));
+      return toNumber(randomBytes(4));
     },
 
     solveCaptcha: (challengeId: string, solution: number) =>

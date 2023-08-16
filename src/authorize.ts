@@ -17,41 +17,42 @@ import {
 import Clock from "./modules/clock";
 import Database from "./modules/database";
 
+export const authorizations = new Map<string, number>();
+
 const Authorize =
   (clock: Clock, database: Database) =>
   <T>(getMessage: (body: T) => Promise<Uint8Array>) =>
   (req: Request, res: Response, next: NextFunction) => {
-    Promise.all([
-      database.getUserAuthorization(req.params.identity || req.body.identity),
-      getMessage(req.body),
-    ]).then(([result, _message]) => {
-      const authorization = result?.sequence ?? 0;
+    getMessage(req.body)
+      .then((_message) => {
+        const identity = req.params.identity || req.body.identity;
+        const authorization = authorizations.get(identity) ?? 0;
 
-      const message = getBytes(
-        concat([
-          req.params.identity,
-          zeroPadValue(toBeArray(authorization), 4),
-          _message,
-        ])
-      );
+        const message = getBytes(
+          concat([zeroPadValue(toBeArray(authorization), 4), _message])
+        );
 
-      try {
-        if (verifyMessage(message, req.body.signature) !== req.params.identity)
-          return res.sendStatus(401);
-      } catch (e) {
-        if (e instanceof TypeError) {
-          return res.sendStatus(400);
+        try {
+          if (verifyMessage(message, req.body.signature) !== identity)
+            return res.sendStatus(401);
+        } catch (e) {
+          if (e instanceof TypeError) {
+            return res.sendStatus(400);
+          }
+          throw e;
         }
-        throw e;
-      }
 
-      next();
+        next();
 
-      /*
+        // TODO: consider overflow
+        authorizations.set(identity, authorization + 1);
+
+        /*
       database
         .setUserAuthorization(identity, authorization + 1)
         .then(() => next());*/
-    });
+      })
+      .catch(() => res.sendStatus(400));
   };
 
 export default Authorize;

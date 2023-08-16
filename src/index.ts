@@ -32,7 +32,7 @@ import {
 import spellCheck from "./spellCheck";
 import palettes from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
-import Authorize from "./authorize";
+import Authorize, { authorizations } from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
 
 const PORT = process.env.PORT || 8081;
@@ -216,13 +216,13 @@ Promise.all([database.initialize(), contract.initialize()])
 
       // endpoints behind authorization
       // payload needs sanitization
+      postAuthorizationSequence,
       registerAccount,
       postSessionPaint,
       postSessionPrompt,
+      postUnlockMorePaint,
       requestWithdrawal,
       solveCaptcha,
-
-      requestAuthorizationSequence,
 
       // captcha game endpoints
       captchaGameGenerate,
@@ -232,7 +232,7 @@ Promise.all([database.initialize(), contract.initialize()])
       const app = express();
       const server = app.listen(PORT);
       const processError = (res: Response, e: Error) => {
-        console.log(e.constructor.name);
+        console.log(e);
         res.sendStatus(
           e instanceof NotFoundError
             ? 404
@@ -382,11 +382,24 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       });
 
-      app.get(`${BASE_URL}/withdrawals/:signature/:amount`, (req, res) => {
-        return requestWithdrawal(`0x${req.params.signature}`, req.params.amount)
-          .then((result) => res.send(result))
-          .catch((e) => processError(res, e));
-      });
+      app.post(
+        `${BASE_URL}/account/:identity/withdrawals`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        authorize<{
+          amount: number;
+        }>((data) =>
+          Promise.resolve(getBytes(zeroPadValue(toBeArray(data.amount), 32)))
+        ),
+        (req, res) => {
+          return requestWithdrawal(
+            req.body.signature,
+            req.params.identity,
+            req.body.amount
+          )
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       app.get(
         `${BASE_URL}/sessions/:sessionHash/prompt/:identity`,
@@ -408,6 +421,16 @@ Promise.all([database.initialize(), contract.initialize()])
         (req, res) =>
           registerAccount(req.body.account)
             .then((result) => res.send(encodeBase64(result)))
+            .catch((e) => processError(res, e))
+      );
+
+      app.post(
+        `${BASE_URL}/sessions/:sessionHash/unlock-paint/:identity`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        authorize(() => Promise.resolve(new Uint8Array([0, 0, 0, 10]))),
+        (req, res) =>
+          postUnlockMorePaint(req.params.sessionHash, req.params.identity)
+            .then((result) => res.send(200))
             .catch((e) => processError(res, e))
       );
 
@@ -610,15 +633,24 @@ Promise.all([database.initialize(), contract.initialize()])
 
       // -- Authorization --
 
-      app.get(
-        `${BASE_URL}/account/:identity/authorization/:signature`,
-        (req, res) =>
-          requestAuthorizationSequence(
-            req.params.identity,
-            req.params.signature
-          )
-            .then((result) => res.send(result.toString()))
-            .catch((e) => processError(res, e))
+      app.post(
+        `${BASE_URL}/account/:identity/authorization`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) => {
+          try {
+            const sequence = postAuthorizationSequence(
+              req.params.identity,
+              req.body.signature
+            );
+
+            authorizations.set(req.params.identity, sequence);
+
+            res.send(sequence.toString());
+          } catch (e) {
+            console.log(e);
+            res.sendStatus(400);
+          }
+        }
       );
 
       // sets the email of the account

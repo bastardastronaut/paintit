@@ -59,10 +59,26 @@ export default (database: Database, contract: Contract) => {
   // withdraw receipts.
   // keep getting larger and larger but only can be used once
 
+  const loadAllowance = (identity: string) =>
+    Promise.all([
+      contract.getWithdrawals(identity),
+      contract.getDeposits(identity),
+      database.getActiveTransactions(identity),
+    ]).then(
+      ([withdrawals, deposits, transactions]) =>
+        transactions.reduce((acc, tx) => acc + tx.amount, 0) +
+        deposits.reduce((acc, i) => acc + parseInt(i), 0) -
+        withdrawals.reduce((acc, i) => acc + parseInt(i), 0)
+    );
+
   return {
-    newTransaction: () => {
-      console.log("creating account, really?");
-    },
+    spendArt: (identity: string, amount: number, message: string) =>
+      loadAllowance(identity).then((allowance) => {
+        if (allowance < amount) throw new BadRequestError("insufficient funds");
+
+        return database.insertTransactions([{ identity, amount: -amount, message }]);
+      }),
+
     loadTransactions: (identity: string) =>
       database.getActiveTransactions(identity).then((transactions) =>
         transactions.map((t) => ({
@@ -73,17 +89,8 @@ export default (database: Database, contract: Contract) => {
       ),
 
     requestWithdrawal: (identity: string, amount: number) =>
-      Promise.all([
-        contract.getWithdrawals(identity),
-        contract.getDeposits(identity),
-        database.getActiveTransactions(identity),
-      ])
-        .then(([withdrawals, deposits, transactions]) => {
-          const allowance =
-            transactions.reduce((acc, tx) => acc + tx.amount, 0) +
-            deposits.reduce((acc, i) => acc + parseInt(i), 0) -
-            withdrawals.reduce((acc, i) => acc + parseInt(i), 0);
-
+      Promise.all([contract.getWithdrawals(identity), loadAllowance(identity)])
+        .then(([withdrawals, allowance]) => {
           let _withdrawalId = sha256(identity);
           for (let i = 0; i < withdrawals.length; ++i) {
             _withdrawalId = sha256(_withdrawalId);

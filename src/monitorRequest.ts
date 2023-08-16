@@ -16,7 +16,7 @@ export const requests = new Map<RequestType, Map<string, number>>([
 ]);
 
 /*
- * what you really want is 
+ * what you really want is
  * global request / second MAX 10
  * for IPs request / minute MAX 100
  * */
@@ -55,9 +55,7 @@ const monitorRequest =
       (requestType === RequestType.Mutate && requestCount > 50) ||
       (requestType === RequestType.Create && requestCount > 5)
     )
-      throw new TooManyRequestsError(
-        `too many ${RequestType[requestType]} requests from ${ip}`
-      );
+      return res.sendStatus(429);
 
     requestTypeMap.set(ip, requestCount + 1);
 
