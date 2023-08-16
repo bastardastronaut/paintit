@@ -22,10 +22,10 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 3600 * 6;
+const ITERATION_LENGTH = 60 * 15;
 const ITERATION_COUNT = 4;
 const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
-const DEFAULT_PAINT = 200;
+const DEFAULT_PAINT = 3000;
 const UNLOCKED_PAINT = 1000;
 const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
 const DEFAULT_PAINT_VIP = 3000;
