@@ -51,7 +51,7 @@ const monitorRequest =
     console.log(`[${ip}]: ${requestCount} ${req.method} ${req.url}`);
 
     if (
-      (requestType === RequestType.Read && requestCount > 1000) ||
+      (requestType === RequestType.Read && requestCount > 100) ||
       (requestType === RequestType.Mutate && requestCount > 50) ||
       (requestType === RequestType.Create && requestCount > 5)
     )

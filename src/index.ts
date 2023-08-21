@@ -585,7 +585,7 @@ Promise.all([database.initialize(), contract.initialize()])
         if (set) {
           // this is the sensitive one, we need to reserve seats for all participants
           // non verified can only be ~50
-          if (set.size > 100) return res.sendStatus(429);
+          if (set.size > 500) return res.sendStatus(429);
 
           set.add(res);
         } else {
