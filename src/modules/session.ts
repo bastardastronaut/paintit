@@ -15,6 +15,7 @@ import Database, { Activity, Session } from "./database";
 import Clock from "./clock";
 import FileSystem from "./filesystem";
 import Paint from "./paint";
+import Contract from "./contract";
 import palettes from "../palettes/";
 import { NotFoundError, BadRequestError } from "../errors";
 import GIFEncoder from "gifencoder";
@@ -22,7 +23,7 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 60 * 5;
+const ITERATION_LENGTH = 5;
 const ITERATION_COUNT = 100;
 const ITERATION_PAINT = 1500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 3000;
@@ -136,6 +137,7 @@ const getPaintCost = (
 export default async (
   database: Database,
   paint: Paint,
+  contract: Contract,
   filesystem: FileSystem,
   clock: Clock
 ) => {
@@ -185,6 +187,7 @@ export default async (
         revision: s.revision,
         promptSize,
         participants: s.participants,
+        txHash: s.tx_hash,
         prompt: s.prompt,
         createdAt: s.created_at,
         maxIterations: ITERATION_COUNT,
@@ -221,7 +224,6 @@ export default async (
       session.iteration === session.maxIterations
         ? filesystem.loadFile(sessionHash).then((art) => {
             if (!art) return [];
-            console.log(sessionHash, art);
             const metadata = new Uint8Array(art.slice(0, 75));
             const rows = toNumber(metadata.slice(64, 66));
             const columns = toNumber(metadata.slice(66, 68));
@@ -230,19 +232,26 @@ export default async (
             seek += signatures * 85 + 4;
 
             const result = [];
-            for (let i = seek; i < art.length; i += 63) {
+            for (let i = seek; i < art.length; i += 64) {
               const createdAt = toNumber(art.slice(i, i + 6));
               const identity = hexlify(
                 new Uint8Array(art.slice(i + 38, i + 58))
               );
-              console.log(identity);
               const colorIndex = toNumber(art.slice(i + 58, i + 59));
-              console.log(colorIndex);
               const positionIndex = toNumber(art.slice(i + 59, i + 63));
+              const iteration = toNumber(art.slice(i + 63, i + 64));
               if (positionIndex > rows * columns)
                 throw new Error(positionIndex.toString());
-              result.push({ createdAt, colorIndex, positionIndex, identity });
+              result.push({
+                createdAt,
+                colorIndex,
+                positionIndex,
+                identity,
+                iteration,
+              });
             }
+
+            console.log(result)
 
             return result;
           })
@@ -255,12 +264,14 @@ export default async (
                     revision: a.revision,
                     positionIndex: a.position_index,
                     colorIndex: a.color_index,
+                    iteration: a.iteration,
                   }))
                 : activity.map((a) => ({
                     identity: a.identity,
                     createdAt: a.created_at,
                     positionIndex: a.position_index,
                     colorIndex: a.color_index,
+                    iteration: a.iteration,
                   }))
             )
     );
@@ -325,6 +336,11 @@ export default async (
         filesystem.loadFile(s.hash),
       ]);
 
+    const artValue = contributions.reduce(
+      (acc, [i, c]) => acc + Math.floor(c / 100) * 100,
+      0
+    );
+
     if (!_initialCanvas) throw new Error("missing canvas");
 
     // TODO: consider storing prompt history as well
@@ -336,8 +352,7 @@ export default async (
         zeroPadValue(toBeArray(s.rows), 2),
         zeroPadValue(toBeArray(s.columns), 2),
         zeroPadValue(toBeArray(s.created_at), 6),
-        toBeArray(s.palette_index),
-        // this is sort of dangerous
+        zeroPadValue(toBeArray(s.palette_index), 1),
         new Uint8Array(_initialCanvas),
         zeroPadValue(toBeArray(signatures.length), 4),
         ...signatures.map(({ signature, identity }) =>
@@ -345,13 +360,21 @@ export default async (
         ),
         // so is this.
         ...activity.map(
-          ({ created_at, position_index, color_index, identity, revision }) =>
+          ({
+            created_at,
+            position_index,
+            color_index,
+            identity,
+            revision,
+            iteration,
+          }) =>
             concat([
               zeroPadValue(toBeArray(created_at), 6),
               revision,
               identity,
               zeroPadValue(toBeArray(color_index), 1),
               zeroPadValue(toBeArray(position_index), 4),
+              toBeArray(iteration),
             ])
         ),
       ])
@@ -363,7 +386,7 @@ export default async (
         database.insertTransactions(
           contributions.map(([identity, contribution]) => ({
             identity,
-            amount: Math.floor(contribution / 100),
+            amount: Math.floor(contribution / 100) * 100,
             message: s.hash,
           }))
         )
@@ -386,20 +409,26 @@ export default async (
         // need to get all signatures + history and remove from database
         // also mint the required tokens
 
-        return filesystem.saveFile(finalFile, s.hash);
+        return Promise.all([
+          contract.submitDrawing(sha256(finalFile), artValue),
+          filesystem.saveFile(finalFile, s.hash),
+        ]);
       })
-      .then(() => {
+      .then(([txHash]) => {
         Promise.all([
+          database.setSessionTransactionHash(s.hash, txHash),
           database.deleteSessionPaint(s.hash),
           database.deleteSessionActivity(s.hash),
           database.deleteSessionSignatures(s.hash),
           database.deleteSessionPrompts(s.hash),
         ]);
+
         return null;
       });
   };
 
   const currentSessions = await database.getActiveSessions();
+  console.log(currentSessions)
 
   const progressSession = (session: Session): Promise<null> => {
     if (session.current_iteration === ITERATION_COUNT - 1) {
@@ -521,6 +550,7 @@ export default async (
             columns,
             hash,
             participants,
+            tx_hash,
             palette_index,
             session_type,
             iteration_started_at,
@@ -533,6 +563,7 @@ export default async (
             rows,
             columns,
             participants,
+            txHash: tx_hash,
             iteration: current_iteration,
             prompt,
             paletteIndex: palette_index,
@@ -766,9 +797,9 @@ export default async (
         identity
       );
 
-      // TBD: iteration not part of signature should it be?
       activity.push({
         identity,
+        iteration: 0, // TBD: iteration not part of signature should it be?
         revision,
         color_index: colorIndex,
         position_index: positionIndex,

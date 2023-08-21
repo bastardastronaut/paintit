@@ -1,8 +1,8 @@
 import {
   EventLog,
+  sha256,
   Wallet,
   Contract,
-  JsonRpcProvider,
   toBeArray,
   Provider,
   concat,
@@ -14,17 +14,16 @@ import config from "../config";
 
 export default class PaintContract {
   private contract: Contract;
-  private provider: Provider;
   private account: Wallet;
 
   constructor(account: Wallet) {
     this.account = account;
-    this.provider = new JsonRpcProvider(config.ethereum.key);
     this.contract = new Contract(
       config.ethereum.contractAddress,
       config.ethereum.abi,
-      this.provider
+      this.account
     );
+    // this.submitDrawing(sha256("0x4324b23423ba"), 100);
   }
 
   getWithdrawals(address: string) {
@@ -41,6 +40,10 @@ export default class PaintContract {
       .then((eventLogs) =>
         eventLogs.map((event) => (event as EventLog).args[1])
       );
+  }
+
+  submitDrawing(hash: string, artValue: number) {
+    return this.contract.submitDrawing(hash, artValue).then((tx) => tx.hash);
   }
 
   async initialize() {}

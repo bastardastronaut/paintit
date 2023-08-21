@@ -5,6 +5,7 @@ import bodyParser from "body-parser";
 import {
   randomBytes,
   Signature,
+  JsonRpcProvider,
   encodeBase64,
   zeroPadValue,
   toBeArray,
@@ -34,6 +35,8 @@ import palettes from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import Authorize, { authorizations } from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
+
+import config from "./config";
 
 const PORT = process.env.PORT || 8081;
 const BASE_URL = "/api";
@@ -67,10 +70,13 @@ const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
 });
+
 const masterWallet = new Wallet(
   process.env.ACCOUNT_ADDRESS ||
-    "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d"
+    "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d",
+  new JsonRpcProvider(config.ethereum.key)
 );
+
 const filesystem = new FileSystem(FS_PATH);
 const clock = new Clock();
 const paint = new Paint();
@@ -437,7 +443,7 @@ Promise.all([database.initialize(), contract.initialize()])
       app.post(
         `${BASE_URL}/sessions/:sessionHash/unlock-paint/:identity`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
-        authorize(() => Promise.resolve(new Uint8Array([0, 0, 0, 10]))),
+        authorize(() => Promise.resolve(new Uint8Array([0, 0, 3, 232]))),
         (req, res) =>
           postUnlockMorePaint(req.params.sessionHash, req.params.identity)
             .then((result) => res.send(200))
@@ -484,7 +490,7 @@ Promise.all([database.initialize(), contract.initialize()])
                 ? 0.5
                 : userMetrics.is_verified
                 ? 1
-                : 3;
+                : 0.5;
 
               // TODO: return ACK
               // a signature to the request

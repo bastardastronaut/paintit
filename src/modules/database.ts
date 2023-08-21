@@ -1,6 +1,7 @@
 import { verbose, Database as SQLiteDatabse } from "sqlite3";
 
 export type Session = {
+  tx_hash: string;
   participants: number;
   prompt_word_length: number;
   session_type: number;
@@ -40,6 +41,7 @@ export type Activity = {
   color_index: number;
   identity: string;
   revision: string;
+  iteration: number;
 };
 
 export enum SessionType {
@@ -212,9 +214,15 @@ export default class Database {
     );
   }
 
+  setSessionTransactionHash(sessionHash: string, transactionHash: string) {
+    return this.upsert(
+      `UPDATE sessions SET tx_hash='${transactionHash}' WHERE hash='${sessionHash}'`
+    );
+  }
+
   updateUserPaint(sessionHash: string, identity: string, paintLeft: number) {
     return this.upsert(
-      `INSERT INTO session_paint (hash, identity, paint, last_action) VALUES('${sessionHash}', '${identity}', '${paintLeft}', unixepoch())
+      `INSERT INTO session_paint (hash, identity, paint) VALUES('${sessionHash}', '${identity}', '${paintLeft}')
       ON CONFLICT (identity, hash) DO UPDATE SET paint='${paintLeft}'`
     );
   }
@@ -315,13 +323,13 @@ export default class Database {
 
   getSessionByHash(hash: string): Promise<null | Session> {
     return this.get<Session>(
-      `SELECT *, COUNT(*) AS participants FROM sessions RIGHT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE session_prompts.hash='${hash}' GROUP BY session_prompts.hash`
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY sessions.hash`
     );
   }
 
   getActiveSessions(): Promise<Session[]> {
     return this.getAll(
-      `SELECT *, COUNT(*) AS participants FROM sessions RIGHT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE current_iteration < 100 GROUP BY session_prompts.hash ORDER BY created_at DESC`
+      `SELECT *, sessions.hash as hash, COUNT(session_prompts.hash) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash WHERE current_iteration < 100 GROUP BY sessions.hash ORDER BY created_at DESC`
     );
   }
 

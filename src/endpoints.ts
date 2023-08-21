@@ -30,8 +30,8 @@ export default async (
   contract: Contract
 ) => {
   const account = await Account(clock, database, paint);
-  const session = await Session(database, paint, filesystem, clock);
   const transactions = await Transactions(database, contract);
+  const session = await Session(database, paint, contract, filesystem, clock);
 
   const expiredSignatures = new Set<string>();
 
@@ -74,7 +74,7 @@ export default async (
 
     postUnlockMorePaint: (sessionHash: string, identity: string) =>
       transactions
-        .spendArt(identity, 10, sessionHash)
+        .spendArt(identity, 1000, sessionHash)
         .then(() => session.unlockMorePaint(sessionHash, identity)),
 
     getSessions: () => session.loadSessions(),
