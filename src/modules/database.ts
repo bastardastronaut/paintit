@@ -1,6 +1,7 @@
 import { verbose, Database as SQLiteDatabse } from "sqlite3";
 
 export type Session = {
+  participants: number;
   prompt_word_length: number;
   session_type: number;
   hash: string;
@@ -168,10 +169,11 @@ export default class Database {
     revision: string,
     identity: string,
     positionIndex: number,
-    colorIndex: number
+    colorIndex: number,
+    iteration: number
   ) {
     return this.upsert(
-      `INSERT INTO draw_activity (hash, revision, identity, position_index, color_index, iteration, created_at) VALUES('${hash}', '${revision}', '${identity}', ${positionIndex}, ${colorIndex}, 0, unixepoch())`
+      `INSERT INTO draw_activity (hash, revision, identity, position_index, color_index, iteration, created_at) VALUES('${hash}', '${revision}', '${identity}', ${positionIndex}, ${colorIndex}, ${iteration}, unixepoch())`
     );
   }
 
@@ -225,7 +227,7 @@ export default class Database {
   }
 
   getSignatures(sessionHash: string) {
-    return this.getAll<{ signature: string, identity: string }>(
+    return this.getAll<{ signature: string; identity: string }>(
       `SELECT identity, signature FROM draw_signatures WHERE hash='${sessionHash}'`
     );
   }
@@ -270,9 +272,7 @@ export default class Database {
   }
 
   deleteSessionActivity(sessionHash: string) {
-    return this.upsert(
-      `DELETE FROM draw_activity WHERE hash='${sessionHash}'`
-    );
+    return this.upsert(`DELETE FROM draw_activity WHERE hash='${sessionHash}'`);
   }
 
   deleteSessionSignatures(sessionHash: string) {
@@ -282,9 +282,7 @@ export default class Database {
   }
 
   deleteSessionPaint(sessionHash: string) {
-    return this.upsert(
-      `DELETE FROM session_paint WHERE hash='${sessionHash}'`
-    );
+    return this.upsert(`DELETE FROM session_paint WHERE hash='${sessionHash}'`);
   }
 
   addUserEmail(identity: string, email: string, verificationCode: number) {
@@ -316,16 +314,14 @@ export default class Database {
   }
 
   getSessionByHash(hash: string): Promise<null | Session> {
-    return this.get(`SELECT * FROM sessions WHERE hash='${hash}'`);
-  }
-
-  getLatestDrawing(): Promise<null | Session> {
-    return this.get(`SELECT * FROM sessions ORDER BY created_at DESC LIMIT 1`);
+    return this.get<Session>(
+      `SELECT *, COUNT(*) AS participants FROM sessions RIGHT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE session_prompts.hash='${hash}' GROUP BY session_prompts.hash`
+    );
   }
 
   getActiveSessions(): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration < 4 ORDER BY created_at DESC`
+      `SELECT *, COUNT(*) AS participants FROM sessions RIGHT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE current_iteration < 100 GROUP BY session_prompts.hash ORDER BY created_at DESC`
     );
   }
 
@@ -343,14 +339,17 @@ export default class Database {
 
   getArchivedSessions(limit = 3, offset = 0): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration == 4 ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT * FROM sessions WHERE current_iteration == 100 ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
     );
   }
 
-  resetParticipantsPaint(hash: string) {
-    return this.upsert(`DELETE FROM session_paint WHERE hash = '${hash}'`);
+  addParticipantsPaint(hash: string, paintToAdd: number) {
+    return this.upsert(
+      `UPDATE session_paint SET paint = floor(paint * 0.75) + ${paintToAdd} WHERE hash = '${hash}'`
+    );
   }
 
+  // should this be authorized?
   getPixelHistory(hash: string, positionIndex: number): Promise<Activity[]> {
     return this.getAll<Activity>(
       `SELECT position_index, color_index, identity
@@ -364,6 +363,18 @@ ORDER BY created_at ASC`
   getSessionPrompts(sessionHash: string) {
     return this.getAll<{ text: string; votes: number }>(
       `SELECT text, COUNT(*) as votes FROM session_prompts WHERE hash='${sessionHash}' GROUP BY text`
+    );
+  }
+
+  getSessionParticipants(sessionHash: string) {
+    return this.getAll<{ identity: string }>(
+      `SELECT identity FROM session_prompts WHERE hash='${sessionHash}'`
+    );
+  }
+
+  isParticipant(sessionHash: string, identity: string) {
+    return this.getAll<{ identity: string }>(
+      `SELECT identity FROM session_prompts WHERE hash='${sessionHash}' AND identity='${identity}'`
     );
   }
 
@@ -441,7 +452,7 @@ ORDER BY created_at ASC`
         // 1-2 -> drawing with adaptive palette
         // 3 -> voting phase (TBD)
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, session_type INTEGER, rows INTEGER, columns INTEGER, palette_index INTEGER, revision TEXT, prompt TEXT, current_iteration INTEGER, iteration_started_at INTEGER, max_iterations INTEGER, iteration_length INTEGER, prompt_word_length INTEGER, created_at INTEGER)"
+          "CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, session_type INTEGER, rows INTEGER, columns INTEGER, palette_index INTEGER, revision TEXT, prompt TEXT, current_iteration INTEGER, iteration_started_at INTEGER, max_iterations INTEGER, iteration_length INTEGER, prompt_word_length INTEGER, tx_hash TEXT, created_at INTEGER)"
         );
 
         this.db.run(
@@ -454,11 +465,7 @@ ORDER BY created_at ASC`
         );
 
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS session_paint (hash TEXT, identity TEXT, paint INTEGER, last_action INTEGER, PRIMARY KEY(hash, identity))"
-        );
-
-        this.db.run(
-          "CREATE TRIGGER IF NOT EXISTS paint_update AFTER UPDATE ON session_paint BEGIN update session_paint SET last_action = unixepoch() WHERE hash = NEW.hash AND identity = NEW.identity; END;"
+          "CREATE TABLE IF NOT EXISTS session_paint (hash TEXT, identity TEXT, paint INTEGER INTEGER, PRIMARY KEY(hash, identity))"
         );
 
         this.db.run(

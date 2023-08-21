@@ -22,9 +22,9 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 60 * 15;
-const ITERATION_COUNT = 4;
-const ITERATION_PAINT = 2500; // TBD: will depend on stage contribution and verification status
+const ITERATION_LENGTH = 60 * 5;
+const ITERATION_COUNT = 100;
+const ITERATION_PAINT = 1500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 3000;
 const UNLOCKED_PAINT = 1000;
 const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
@@ -184,6 +184,7 @@ export default async (
         iterationEndsAt: s.iteration_started_at + ITERATION_LENGTH,
         revision: s.revision,
         promptSize,
+        participants: s.participants,
         prompt: s.prompt,
         createdAt: s.created_at,
         maxIterations: ITERATION_COUNT,
@@ -326,6 +327,8 @@ export default async (
 
     if (!_initialCanvas) throw new Error("missing canvas");
 
+    // TODO: consider storing prompt history as well
+
     const finalFile = getBytes(
       concat([
         s.hash,
@@ -390,6 +393,7 @@ export default async (
           database.deleteSessionPaint(s.hash),
           database.deleteSessionActivity(s.hash),
           database.deleteSessionSignatures(s.hash),
+          database.deleteSessionPrompts(s.hash),
         ]);
         return null;
       });
@@ -404,7 +408,7 @@ export default async (
 
     return Promise.all([
       database.progressSession(session.hash, session.current_iteration + 1),
-      database.resetParticipantsPaint(session.hash),
+      database.addParticipantsPaint(session.hash, ITERATION_PAINT),
     ])
       .then(() => database.getSessionByHash(session.hash))
       .then((_session) =>
@@ -417,26 +421,20 @@ export default async (
   };
 
   const loadSessionPaint = (sessionHash: string, identity: string) =>
-    database.getUserSessionPaint(sessionHash, identity).then((result) =>
-      result === null
-        ? database
-            .getUserMetrics(identity)
-            .then(([userStatus, invitations]) => {
-              if (!userStatus) return DEFAULT_PAINT;
-
-              const basePaint = userStatus.is_vip
-                ? DEFAULT_PAINT_VIP
-                : userStatus.is_verified
-                ? DEFAULT_PAINT_EMAIL_VERIFIED
-                : DEFAULT_PAINT;
-
-              return (
-                basePaint +
-                (invitations?.invitationCount || 0) * INVITATION_BONUS
-              );
-            })
-        : result.paint
-    );
+    database
+      .getUserSessionPaint(sessionHash, identity)
+      .then((result) =>
+        result === null
+          ? database
+              .getUserMetrics(identity)
+              .then(([userStatus, invitations]) =>
+                userStatus?.is_vip
+                  ? DEFAULT_PAINT +
+                    (invitations?.invitationCount || 0) * INVITATION_BONUS
+                  : 0
+              )
+          : result.paint
+      );
 
   for (const s of currentSessions) {
     if (s.current_iteration > 0 && s.current_iteration < ITERATION_COUNT) {
@@ -522,6 +520,7 @@ export default async (
             rows,
             columns,
             hash,
+            participants,
             palette_index,
             session_type,
             iteration_started_at,
@@ -533,6 +532,7 @@ export default async (
             hash,
             rows,
             columns,
+            participants,
             iteration: current_iteration,
             prompt,
             paletteIndex: palette_index,
@@ -688,6 +688,8 @@ export default async (
           prompt
         );
 
+        await database.updateUserPaint(sessionHash, identity, DEFAULT_PAINT);
+
         const isComplete =
           (matchingPrompts?.matchCount || 0) >= consensusRequirement - 1;
 
@@ -702,10 +704,7 @@ export default async (
             : currentSize;
 
         if (isComplete) {
-          await Promise.all([
-            database.updateSessionPrompt(sessionHash, prompt, isComplete),
-            database.deleteSessionPrompts(sessionHash),
-          ]);
+          await database.updateSessionPrompt(sessionHash, prompt, isComplete);
 
           const promptSessions = await database.getPromptSessions();
 
@@ -767,6 +766,7 @@ export default async (
         identity
       );
 
+      // TBD: iteration not part of signature should it be?
       activity.push({
         identity,
         revision,
@@ -889,7 +889,8 @@ export default async (
           revision,
           identity,
           positionIndex,
-          colorIndex
+          colorIndex,
+          session.current_iteration
         );
 
         return Promise.all([

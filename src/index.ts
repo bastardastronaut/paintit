@@ -274,6 +274,7 @@ Promise.all([database.initialize(), contract.initialize()])
           .catch((e) => processError(res, e));
       });
 
+      // this is a public endpoint, just looking doesn't mean it's bound to change
       app.get(
         `${BASE_URL}/sessions/:sessionHash/history/:positionIndex`,
         (req, res) => {
@@ -281,7 +282,16 @@ Promise.all([database.initialize(), contract.initialize()])
             req.params.sessionHash,
             parseInt(req.params.positionIndex)
           )
-            .then((result) => res.send(result))
+            .then((result) => {
+              // identity not known...
+              /*
+              notify(
+                req.params.sessionHash,
+                "position-looked-at",
+                req.params.positionIndex
+              );*/
+              res.send(result);
+            })
             .catch((e) => processError(res, e));
         }
       );
@@ -545,6 +555,12 @@ Promise.all([database.initialize(), contract.initialize()])
       );
 
       // TODO: this must be authorized
+      //
+      // simple:
+      // participants ALWAYS get access
+      // they can kick observers out any time
+      //
+      //
       // need to login via signature, only allow painting from users who have identified themselves
       // rate limiting will be based on this
       // # of users * second
@@ -559,16 +575,16 @@ Promise.all([database.initialize(), contract.initialize()])
         // need to have the correct auth window
         // console.log(req.params.signature);
         // need to have signature and verify user, do we ?
-        if (connections.has(req.params.sessionHash)) {
-          const set = connections.get(req.params.sessionHash) as Set<Response>;
-
-          // this is the sensitive one, we need to reserve seats for verified accounts
+        let set = connections.get(req.params.sessionHash) as Set<Response>;
+        if (set) {
+          // this is the sensitive one, we need to reserve seats for all participants
           // non verified can only be ~50
           if (set.size > 100) return res.sendStatus(429);
 
           set.add(res);
         } else {
-          connections.set(req.params.sessionHash, new Set([res]));
+          set = new Set([res]);
+          connections.set(req.params.sessionHash, set);
         }
 
         res.writeHead(200, {
@@ -577,10 +593,17 @@ Promise.all([database.initialize(), contract.initialize()])
           Connection: "keep-alive",
         });
 
+        notify(req.params.sessionHash, "observers-change", set.size.toString());
+
         req.on("close", () => {
           res.end();
           const drawingConnections = connections.get(req.params.sessionHash);
           if (!drawingConnections) return;
+          notify(
+            req.params.sessionHash,
+            "observers-change",
+            drawingConnections.size.toString()
+          );
           drawingConnections.delete(res);
           if (drawingConnections.size === 0)
             connections.delete(req.params.sessionHash);

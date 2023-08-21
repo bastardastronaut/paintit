@@ -37,14 +37,6 @@ export default async (
 
   // actually this should be a middleware
   return {
-    // always consider replay attacks in these
-    // it's probably safest to always only allow one request/account
-    // upon getAccount we can return a token
-    // (generate 1000 hashes and move up the chain)
-    // accounts are stored in a map of {number, root}
-    // once through new token is generated.
-    // any POST must adhere to token rule
-    // every post will return the next token
     postVoteOnQuality: (
       hash: string,
       identity: string,

@@ -23,9 +23,9 @@ export const requests = new Map<RequestType, Map<string, number>>([
 
 const monitorRequest =
   (clock: Clock) => (req: Request, res: Response, next: NextFunction) => {
-    // requests are reset every 5 minutes
-    // policy:     GET requests -> 500 / 5 minutes / IP
-    // POST/PUT/DELETE requests -> 50 / 5 minutes / IP
+    // requests are reset every 1 minute
+    // policy:     GET requests -> 100 / 1 minute / IP
+    // POST/PUT/DELETE requests -> 50 / 1 minute / IP
     // CREATE
 
     // read existing dataset
@@ -51,7 +51,7 @@ const monitorRequest =
     console.log(`[${ip}]: ${requestCount} ${req.method} ${req.url}`);
 
     if (
-      (requestType === RequestType.Read && requestCount > 500) ||
+      (requestType === RequestType.Read && requestCount > 100) ||
       (requestType === RequestType.Mutate && requestCount > 50) ||
       (requestType === RequestType.Create && requestCount > 5)
     )
@@ -59,7 +59,7 @@ const monitorRequest =
 
     requestTypeMap.set(ip, requestCount + 1);
 
-    clock.in(300).then(() => {
+    clock.in(60).then(() => {
       const requestCount = requestTypeMap.get(ip) || 0;
       if (requestCount < 2) requestTypeMap.delete(ip);
       else requestTypeMap.set(ip, requestCount - 1);
