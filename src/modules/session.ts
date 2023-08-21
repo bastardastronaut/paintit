@@ -707,7 +707,7 @@ export default async (
 
       try {
         const r = session.rows * session.columns;
-        const consensusRequirement = 2 * Math.round(
+        const consensusRequirement = 4 * Math.round(
           (Math.log(r) / Math.log(2)) * (r / 16384)
         );
 

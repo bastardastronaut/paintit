@@ -455,8 +455,6 @@ Promise.all([database.initialize(), contract.initialize()])
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
         (req, res) => {
-          console.log(req.body);
-          // TODO: need to sanitize input
           const set = connections.get(req.params.sessionHash);
           if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);
           if (!set) return res.sendStatus(404);

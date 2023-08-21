@@ -21,6 +21,8 @@ export const requests = new Map<RequestType, Map<string, number>>([
  * for IPs request / minute MAX 100
  * */
 
+const blacklist = new Set<string>();
+
 const monitorRequest =
   (clock: Clock) => (req: Request, res: Response, next: NextFunction) => {
     // requests are reset every 1 minute
@@ -51,11 +53,19 @@ const monitorRequest =
     console.log(`[${ip}]: ${requestCount} ${req.method} ${req.url}`);
 
     if (
+      blacklist.has(ip) ||
       (requestType === RequestType.Read && requestCount > 100) ||
       (requestType === RequestType.Mutate && requestCount > 50) ||
       (requestType === RequestType.Create && requestCount > 5)
-    )
+    ) {
+      blacklist.add(ip);
+
+      clock.in(60).then(() => {
+        blacklist.delete(ip);
+      });
+
       return res.sendStatus(429);
+    }
 
     requestTypeMap.set(ip, requestCount + 1);
 
