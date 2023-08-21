@@ -23,7 +23,7 @@ import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { getDistance } from "./utils";
 
-const ITERATION_LENGTH = 5;
+const ITERATION_LENGTH = 15 * 60;
 const ITERATION_COUNT = 100;
 const ITERATION_PAINT = 1500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 3000;
@@ -251,8 +251,6 @@ export default async (
               });
             }
 
-            console.log(result)
-
             return result;
           })
         : database
@@ -322,7 +320,7 @@ export default async (
 
       return Array.from(contributions.entries()).sort(([, a], [, b]) =>
         a > b ? -1 : 1
-      );
+      ).slice(0, 100);
     });
   };
 
@@ -428,7 +426,6 @@ export default async (
   };
 
   const currentSessions = await database.getActiveSessions();
-  console.log(currentSessions)
 
   const progressSession = (session: Session): Promise<null> => {
     if (session.current_iteration === ITERATION_COUNT - 1) {
@@ -710,7 +707,7 @@ export default async (
 
       try {
         const r = session.rows * session.columns;
-        const consensusRequirement = Math.round(
+        const consensusRequirement = 2 * Math.round(
           (Math.log(r) / Math.log(2)) * (r / 16384)
         );
 

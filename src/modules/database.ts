@@ -246,14 +246,14 @@ export default class Database {
     iteration: number
   ) {
     return this.get<{ iterationCount: number }>(
-      `SELECT COUNT(*) as iterationCount FROM draw_activity WHERE hash='${sessionHash}' AND identity='${identity}' AND iteration=${iteration}`
+      `SELECT COUNT(*) as iterationCount FROM draw_activity WHERE hash='${sessionHash}' AND LOWER(identity)=LOWER('${identity}') AND iteration=${iteration}`
     );
   }
 
   getUserMetrics(identity: string) {
     return Promise.all([
       this.get<{ is_vip: boolean; is_verified: boolean }>(
-        `SELECT is_vip, is_verified FROM users WHERE identity='${identity}'`
+        `SELECT is_vip, is_verified FROM users WHERE LOWER(identity)=LOWER('${identity}')`
       ),
       this.get<{ invitationCount: number }>(
         `SELECT COUNT(*) AS invitationCount FROM users WHERE invited_by='${identity}' AND is_verified=TRUE`
@@ -341,7 +341,7 @@ export default class Database {
 
   getActiveTransactions(identity: string): Promise<Transaction[]> {
     return this.getAll(
-      `SELECT * FROM transactions WHERE withdrawal_id is NULL AND identity='${identity}' ORDER BY created_at DESC`
+      `SELECT * FROM transactions WHERE withdrawal_id is NULL AND LOWER(identity)=LOWER('${identity}') ORDER BY created_at DESC`
     );
   }
 

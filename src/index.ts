@@ -490,7 +490,7 @@ Promise.all([database.initialize(), contract.initialize()])
                 ? 0.5
                 : userMetrics.is_verified
                 ? 1
-                : 0.5;
+                : 2;
 
               // TODO: return ACK
               // a signature to the request
