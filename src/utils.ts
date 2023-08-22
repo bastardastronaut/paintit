@@ -1,9 +1,24 @@
-import chroma, { deltaE, Color } from "chroma-js";
+import chroma, { distance, Color } from "chroma-js";
 import { randomBytes } from "ethers";
 
 type Pixel = [number, number, number];
 const toChroma = (p: Pixel) => chroma(p.map((i) => i * 255));
 
+const palette_32 = 
+[
+  '#ac5030', '#d0d050', '#dcdcdc',
+  '#a03c88', '#1c5c48', '#a4fcd4',
+  '#000000', '#848424', '#205c20',
+  '#a8a0ec', '#442800', '#689cc0',
+  '#eca0a0', '#84b468', '#ffffff',
+  '#3840b0', '#9c2020', '#e8cc7c',
+  '#480078', '#002c5c', '#7c70d0',
+  '#6c9850', '#407c40', '#5070bc',
+  '#689cc0', '#b0b0b0', '#985c28',
+  '#b03c3c', '#e0ec9c', '#dc9cd0',
+  '#bc8c4c', '#d084c0'
+]
+;
 const fantasy_palette = [
   "#000000",
   "#131013",
@@ -529,6 +544,8 @@ const atari_palette = [
 ];
 
 const palette = atari_palette;
+const target_length = 32;
+const colors = 8;
 
 const finalPalette: any[] = [];
 const colorIndex = new Map<any, number>();
@@ -543,7 +560,7 @@ for (let i = 0; i < palette.length; ++i) {
   finalPalette.push(color);
 }
 
-const cache: number[][] = [...new Array(128)].map(() => []);
+const cache: number[][] = [...new Array(finalPalette.length)].map(() => []);
 function colorDiff(color1: any, color2: any): number {
   const i1 = colorIndex.get(color1) as number;
   const i2 = colorIndex.get(color2) as number;
@@ -553,7 +570,7 @@ function colorDiff(color1: any, color2: any): number {
     return cacheResult;
   }
 
-  const diff = deltaE(color1, color2);
+  const diff = distance(color1, color2);
 
   cache[i1][i2] = diff;
   cache[i2][i1] = diff;
@@ -563,10 +580,25 @@ function colorDiff(color1: any, color2: any): number {
 
 let colorMap = new Map<string, Array<string>>();
 let iterationCount = 0;
-let bestProximity = 1000;
+let bestProximity = 10000000;
 console.log("lets begin!");
 
-const setColors = ["#404040", "#ececec"];
+const setColors = 
+[
+  '#e0ec9c', '#4c501c',
+  '#78005c', '#7cd0ac',
+  '#ac783c', '#a4c8fc',
+  '#7c8ce0', '#b03c3c'
+  /*
+  "#404040",
+  "#6874d0",
+  "#ac783c",
+  "#a4fcd4",
+  "#442800",
+  "#3840b0",
+  "#b4e490",
+  "#844414",*/
+] as any[];
 
 let representation = [];
 let proximityCache = new Map<number, string[]>();
@@ -575,11 +607,13 @@ while (colorMap.size === 0 || bestProximity > 14) {
   colorMap = new Map<string, Array<string>>();
   const _palette = [
     ...setColors.map((hex) => hexColorIndex.get(hex)),
-    ...[...new Array(14)].map(() => finalPalette[randomBytes(1)[0] % 128]),
+    ...[...new Array(target_length - setColors.length)].map(
+      () => finalPalette[randomBytes(1)[0] % finalPalette.length]
+    ),
   ];
   representation = [];
 
-  for (let i = 0; i < 128; ++i) {
+  for (let i = 0; i < finalPalette.length; ++i) {
     representation[i] = 0;
   }
 
@@ -600,7 +634,7 @@ while (colorMap.size === 0 || bestProximity > 14) {
         };
       }
       colorDiffs[index].sort((a, b) => (a.d > b.d ? 1 : -1));
-      selectedColors = colorDiffs[index].slice(1, 17).map((a) => a.hex);
+      selectedColors = colorDiffs[index].slice(0, colors).map((a) => a.hex);
       proximityCache.set(index, selectedColors);
     }
 
@@ -611,16 +645,16 @@ while (colorMap.size === 0 || bestProximity > 14) {
     colorMap.set(colorHexIndex.get(p) as string, selectedColors);
   }
 
-  for (let i = 0; i < 128; ++i) {
-    if (representation[i] === 0) proximity += 1000;
-    proximity += Math.pow(Math.abs(representation[i] - 2) + 1, 2);
+  for (let i = 0; i < finalPalette.length; ++i) {
+    if (representation[i] === 0) proximity += 100000;
+    else proximity += Math.pow(Math.abs(representation[i] - 4), 3);
   }
 
   if (proximity < bestProximity) {
     bestProximity = proximity;
     console.log(` -- found new: ${proximity} -- `);
     console.log(_palette.map((p) => colorHexIndex.get(p)));
-    console.log(representation);
+    console.log(JSON.stringify(representation));
     const map: any = {};
     for (let c of Array.from(colorMap.keys())) {
       map[c] = colorMap.get(c);
@@ -659,13 +693,9 @@ while (colorMap.size === 0 || bestProximity > 14) {
     console.log(" --  -- ");
   }*/
 
-  if (++iterationCount % 1000000 === 0) {
+  if (++iterationCount % 100000 === 0) {
     console.log(`iteration: ${iterationCount} proximity: ${bestProximity}`);
   }
 }
 
 console.log(" -- done --");
-
-
-
-

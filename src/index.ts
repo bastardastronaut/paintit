@@ -31,7 +31,7 @@ import {
   BadRequestError,
 } from "./errors";
 import spellCheck from "./spellCheck";
-import palettes from "./palettes";
+import palettes, { atari } from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import Authorize, { authorizations } from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
@@ -265,6 +265,10 @@ Promise.all([database.initialize(), contract.initialize()])
         res.send(palettes);
       });
 
+      app.get(`${BASE_URL}/palettes-new`, (req, res) => {
+        res.send(atari);
+      });
+
       app.get(`${BASE_URL}/sessions`, (req, res) => {
         getSessions()
           .then((result) => res.send(result))
@@ -469,7 +473,7 @@ Promise.all([database.initialize(), contract.initialize()])
             req.body.signature.length !== 132 ||
             isNaN(positionIndex) ||
             isNaN(colorIndex) ||
-            colorIndex > 15
+            colorIndex > 128
           )
             return res.sendStatus(400);
 

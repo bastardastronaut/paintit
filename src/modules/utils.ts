@@ -1,4 +1,4 @@
-import chroma from 'chroma-js'
+import chroma from "chroma-js";
 export const getDistance = (
   columns: number,
   positionIndex1: number,
@@ -16,15 +16,30 @@ export const getDistance = (
 };
 
 export const generatePalette = (paletteSize = 16) => {
-    
-    const c = chroma.random();
-    const c2 = chroma.random();
-    const functionNames = ["brighten", "saturate", "darken", "desaturate"];
-    return [...new Array(paletteSize)].map(() =>
-      (Math.random() < 0.5 ? c : (c2 as any))
-        [functionNames[Math.floor(Math.random() * functionNames.length)]](
-          Math.random() * 5
-        )
-        .hex()
-    );
-}
+  const c = chroma.random();
+  const c2 = chroma.random();
+  const functionNames = ["brighten", "saturate", "darken", "desaturate"];
+  return [...new Array(paletteSize)].map(() =>
+    (Math.random() < 0.5 ? c : (c2 as any))
+      [functionNames[Math.floor(Math.random() * functionNames.length)]](
+        Math.random() * 5
+      )
+      .hex()
+  );
+};
+
+export const generatePalette2 = (paletteSize = 8) => {
+  const colors = [chroma.random()];
+
+  while (colors.length < paletteSize) {
+    const _c = chroma.random();
+    let i = 0;
+    while (i < colors.length && chroma.deltaE(colors[i], _c) > 200 / paletteSize) i += 1;
+
+    if (i === colors.length) {
+      colors.push(_c);
+    }
+  }
+
+  return colors.map((c) => c.hex());
+};

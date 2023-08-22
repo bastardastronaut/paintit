@@ -9,8 +9,8 @@ export type Session = {
   revision: string;
   prompt: string;
   rows: number;
+  palette: string;
   columns: number;
-  palette_index: number;
   current_iteration: number;
   iteration_started_at: number;
   created_at: number;
@@ -183,11 +183,11 @@ export default class Database {
     hash: string,
     rows: number,
     columns: number,
-    paletteIndex: number,
+    palette: string[],
     promptSize: number
   ) {
     return this.upsert(
-      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette_index, current_iteration, iteration_started_at, created_at, prompt, prompt_word_length) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, ${paletteIndex}, 0, unixepoch(), unixepoch(), '', ${promptSize})`
+      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette, current_iteration, iteration_started_at, created_at, prompt, prompt_word_length) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, '${palette.join('|')}', 0, unixepoch(), unixepoch(), '', ${promptSize})`
     );
   }
 
@@ -360,7 +360,7 @@ export default class Database {
   // should this be authorized?
   getPixelHistory(hash: string, positionIndex: number): Promise<Activity[]> {
     return this.getAll<Activity>(
-      `SELECT position_index, color_index, identity
+      `SELECT iteration, position_index, color_index, identity
 FROM draw_activity
 WHERE hash='${hash}'
 AND position_index=${positionIndex}
@@ -460,7 +460,7 @@ ORDER BY created_at ASC`
         // 1-2 -> drawing with adaptive palette
         // 3 -> voting phase (TBD)
         this.db.run(
-          "CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, session_type INTEGER, rows INTEGER, columns INTEGER, palette_index INTEGER, revision TEXT, prompt TEXT, current_iteration INTEGER, iteration_started_at INTEGER, max_iterations INTEGER, iteration_length INTEGER, prompt_word_length INTEGER, tx_hash TEXT, created_at INTEGER)"
+          "CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, session_type INTEGER, rows INTEGER, columns INTEGER, palette TEXT, revision TEXT, prompt TEXT, current_iteration INTEGER, iteration_started_at INTEGER, max_iterations INTEGER, iteration_length INTEGER, prompt_word_length INTEGER, tx_hash TEXT, created_at INTEGER)"
         );
 
         this.db.run(

@@ -16,14 +16,13 @@ import Clock from "./clock";
 import FileSystem from "./filesystem";
 import Paint from "./paint";
 import Contract from "./contract";
-import palettes from "../palettes/";
 import { NotFoundError, BadRequestError } from "../errors";
 import GIFEncoder from "gifencoder";
 import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
-import { getDistance } from "./utils";
+import { generatePalette2, getDistance } from "./utils";
 
-const ITERATION_LENGTH = 15 * 60;
+const ITERATION_LENGTH = 1 * 60;
 const ITERATION_COUNT = 100;
 const ITERATION_PAINT = 1500; // TBD: will depend on stage contribution and verification status
 const DEFAULT_PAINT = 3000;
@@ -119,19 +118,87 @@ const getSize = (columns: number, rows: number) => {
   return 0;
 };
 
-const getColorDiff = (paletteIndex: number, color1: number, color2: number) =>
-  chroma.deltaE(palettes[paletteIndex][color1], palettes[paletteIndex][color2]);
+const findClosestColors = (
+  palette: string[],
+  colorIndex: number,
+  n: number
+) => {
+  const currentColor = palette[colorIndex];
+  return palette
+    .map((c, i) => ({ i, c }))
+    .sort((a, b) =>
+      chroma.deltaE(a.c, currentColor) > chroma.deltaE(b.c, currentColor)
+        ? 1
+        : -1
+    )
+    .slice(0, n)
+    .map((a) => a.i);
+};
+
+const findOriginalColorIndex = (
+  currentColorIndex: number,
+  iteration: number,
+  activity: Activity[]
+) => {
+  if (
+    activity.length === 0 ||
+    activity[activity.length - 1].iteration < iteration
+  )
+    return currentColorIndex;
+
+  let i = activity.length - 1;
+  while (i >= 0) {
+    if (activity[i].iteration < iteration) return activity[i].color_index;
+    i -= 1;
+  }
+
+  return null;
+};
+
+const getPixelHistory = (
+  initialColor: number,
+  currentIteration: number,
+  activity: Activity[]
+) => {
+  let lastIteration = 0;
+  let lastColorIndex = 0;
+  const colorHistory = [];
+  for (const a of [
+    { color_index: initialColor, iteration: 0 },
+    ...(activity || []),
+    { color_index: -1, iteration: 101 },
+  ]) {
+    if (a.iteration === lastIteration) {
+      lastColorIndex = a.color_index;
+      continue;
+    }
+
+    const pixel = document.createElement("li");
+    if (lastIteration !== currentIteration) {
+      pixel.style.animation = "none";
+      colorHistory.push(lastColorIndex);
+    }
+
+    if (a.color_index !== -1) {
+      lastIteration = a.iteration;
+      lastColorIndex = a.color_index;
+    }
+  }
+
+  return colorHistory;
+};
 
 const getPaintCost = (
-  paletteIndex: number,
   historyLength: number,
   colorFrom: number,
   colorTo: number
 ) => {
+  return (historyLength + 1) * 25;
+  /*
   return Math.floor(
     Math.pow(1.1, historyLength) *
       getColorDiff(paletteIndex, colorFrom, colorTo)
-  );
+  );*/
 };
 
 export default async (
@@ -153,20 +220,17 @@ export default async (
   const generateDrawing = async (size: number): Promise<void> => {
     const [columns, rows] =
       DIMENSIONS[size][Math.floor(Math.random() * DIMENSIONS[size].length)];
-    const paletteIndex = Math.floor(Math.random() * palettes.length);
-    const canvas = paint.generateDrawing(
-      palettes[paletteIndex],
-      columns,
-      rows,
-      1
-    );
+    // const paletteIndex = Math.floor(Math.random() * palettes.length);
+    const paletteIndex = 0;
+    const palette = generatePalette2(8);
+    const canvas = paint.generateDrawing(palette, columns, rows, 1);
 
     const hash = sha256(canvas);
 
     const promptSize = 3 + Math.floor(Math.random() * 5);
 
     await Promise.all([
-      database.insertSession(hash, columns, rows, paletteIndex, promptSize),
+      database.insertSession(hash, columns, rows, palette, promptSize),
       filesystem.saveFile(canvas),
     ]);
   };
@@ -177,7 +241,7 @@ export default async (
       const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH;
 
       return {
-        paletteIndex: s.palette_index,
+        palette: s.palette.split("|"),
         columns: s.columns,
         rows: s.rows,
         iteration: s.current_iteration,
@@ -295,22 +359,20 @@ export default async (
       const historyLengths = new Map<number, number>();
 
       for (const activity of activityLog) {
-        // TODO: REMOVE once tested
-        if (activity.positionIndex > s.rows * s.columns) continue;
+        // need to make sure that iteration was not the same
         contributions.set(
           activity.identity as string,
-          ((50 -
+          /*(50 -
             getColorDiff(
-              s.paletteIndex,
+              0,
               activity.colorIndex,
               finalCanvas[activity.positionIndex]
-            )) *
-            getPaintCost(
-              s.paletteIndex,
-              historyLengths.get(activity.positionIndex) || 0,
-              activity.colorIndex,
-              canvasArray[activity.positionIndex]
-            )) /
+            )) **/
+          getPaintCost(
+            historyLengths.get(activity.positionIndex) || 0,
+            activity.colorIndex,
+            canvasArray[activity.positionIndex]
+          ) /
             50 +
             (contributions.get(activity.identity as string) || 0)
         );
@@ -318,9 +380,9 @@ export default async (
         canvasArray[activity.positionIndex] = activity.colorIndex;
       }
 
-      return Array.from(contributions.entries()).sort(([, a], [, b]) =>
-        a > b ? -1 : 1
-      ).slice(0, 100);
+      return Array.from(contributions.entries())
+        .sort(([, a], [, b]) => (a > b ? -1 : 1))
+        .slice(0, 100);
     });
   };
 
@@ -350,7 +412,8 @@ export default async (
         zeroPadValue(toBeArray(s.rows), 2),
         zeroPadValue(toBeArray(s.columns), 2),
         zeroPadValue(toBeArray(s.created_at), 6),
-        zeroPadValue(toBeArray(s.palette_index), 1),
+        // TODO: add palette
+        zeroPadValue(toBeArray(3), 1),
         new Uint8Array(_initialCanvas),
         zeroPadValue(toBeArray(signatures.length), 4),
         ...signatures.map(({ signature, identity }) =>
@@ -413,13 +476,14 @@ export default async (
         ]);
       })
       .then(([txHash]) => {
+        /* TODO: remove this once we are sure everything works fine
         Promise.all([
           database.setSessionTransactionHash(s.hash, txHash),
           database.deleteSessionPaint(s.hash),
           database.deleteSessionActivity(s.hash),
           database.deleteSessionSignatures(s.hash),
           database.deleteSessionPrompts(s.hash),
-        ]);
+        ]);*/
 
         return null;
       });
@@ -511,11 +575,14 @@ export default async (
     },
     loadPixelHistory: (sessionHash: string, positionIndex: number) =>
       database.getPixelHistory(sessionHash, positionIndex).then((activity) =>
-        activity.map(({ identity, position_index, color_index }) => ({
-          identity,
-          positionIndex: position_index,
-          colorIndex: color_index,
-        }))
+        activity.map(
+          ({ iteration, identity, position_index, color_index }) => ({
+            iteration,
+            identity,
+            positionIndex: position_index,
+            colorIndex: color_index,
+          })
+        )
       ),
     loadArchivedSessions: (limit?: number, offset?: number) =>
       database.getArchivedSessions(limit, offset).then((sessions) =>
@@ -524,7 +591,7 @@ export default async (
             rows,
             columns,
             hash,
-            palette_index,
+            palette,
             session_type,
             prompt,
             created_at,
@@ -533,7 +600,7 @@ export default async (
             rows,
             columns,
             prompt,
-            paletteIndex: palette_index,
+            palette: palette.split("|"),
             sessionType: session_type,
             createdAt: created_at,
           })
@@ -548,7 +615,7 @@ export default async (
             hash,
             participants,
             tx_hash,
-            palette_index,
+            palette,
             session_type,
             iteration_started_at,
             current_iteration,
@@ -563,7 +630,7 @@ export default async (
             txHash: tx_hash,
             iteration: current_iteration,
             prompt,
-            paletteIndex: palette_index,
+            palette: palette.split("|"),
             sessionType: session_type,
             iterationStartedAt: iteration_started_at,
             iterationEndsAt: iteration_started_at + ITERATION_LENGTH,
@@ -584,7 +651,7 @@ export default async (
         const imageData = createImageData(
           new Uint8ClampedArray(
             canvasArray.flatMap((i) => {
-              const result = chroma(palettes[s.paletteIndex][i]).rgba();
+              const result = chroma(s.palette[i]).rgba();
               result[3] = 255;
 
               return result;
@@ -627,7 +694,7 @@ export default async (
           createImageData(
             new Uint8ClampedArray(
               Array.from(_canvas).flatMap((i) => {
-                const result = chroma(palettes[s.paletteIndex][i]).rgba();
+                const result = chroma(s.palette[i]).rgba();
                 result[3] = 255;
 
                 return result;
@@ -707,9 +774,8 @@ export default async (
 
       try {
         const r = session.rows * session.columns;
-        const consensusRequirement = 4 * Math.round(
-          (Math.log(r) / Math.log(2)) * (r / 16384)
-        );
+        const consensusRequirement =
+          4 * Math.round((Math.log(r) / Math.log(2)) * (r / 16384));
 
         const matchingPrompts = await database.getMatchingPrompts(
           sessionHash,
@@ -785,9 +851,10 @@ export default async (
       colorIndex: number
     ) => {
       // if first iteration check if it's first 16 colors.
+      /*
       if (colorIndex > 15) {
         throw new BadRequestError("color not allowed");
-      }
+      }*/
 
       const activity = await database.getActivityByDrawing(
         sessionHash,
@@ -857,10 +924,10 @@ export default async (
         )
           throw new NotFoundError("session not in correct state");
         const canvas = await filesystem.loadFile(session.revision);
+
         if (!canvas) throw new NotFoundError("canvas not found");
 
         const newCanvas = new Uint8Array(canvas.byteLength);
-
         newCanvas.set(canvas);
 
         const history = await database.getPixelHistory(
@@ -868,15 +935,48 @@ export default async (
           positionIndex
         );
 
-        // this can obviously get more complicated
+        let originalColorIndex = findOriginalColorIndex(
+          newCanvas[positionIndex],
+          session.current_iteration,
+          history
+        );
+        originalColorIndex =
+          originalColorIndex === null
+            ? new Uint8Array((await filesystem.loadFile(session.hash)) || [])[
+                positionIndex
+              ]
+            : originalColorIndex;
+
+        if (
+          !findClosestColors(
+            session.palette.split("|"),
+            originalColorIndex,
+            6
+          ).includes(colorIndex)
+        )
+          throw new BadRequestError("transition not allowed");
+
         const paintCost = getPaintCost(
-          session.palette_index,
-          history.length,
+          history.reduce(
+            (acc, a) =>
+              a.iteration === session!.current_iteration ||
+              acc.includes(a.iteration)
+                ? acc
+                : [...acc, a.iteration],
+            [] as number[]
+          ).length,
           colorIndex,
           newCanvas[positionIndex]
         );
 
-        if (paintCost === 0)
+        if (
+          paintCost >=
+          (session.current_iteration < ITERATION_COUNT / 2 ? 200 : 200)
+        ) {
+          throw new BadRequestError("pixel already fixed");
+        }
+
+        if (newCanvas[positionIndex] === colorIndex)
           throw new BadRequestError("already the same color");
         if (paintCost > paintLeft) throw new BadRequestError("paint spent");
 
