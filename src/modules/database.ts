@@ -3,7 +3,7 @@ import { verbose, Database as SQLiteDatabse } from "sqlite3";
 export type Session = {
   tx_hash: string;
   participants: number;
-  prompt_word_length: number;
+  max_iterations: number;
   session_type: number;
   hash: string;
   revision: string;
@@ -184,10 +184,10 @@ export default class Database {
     rows: number,
     columns: number,
     palette: string[],
-    promptSize: number
+    maxIterations: number
   ) {
     return this.upsert(
-      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette, current_iteration, iteration_started_at, created_at, prompt, prompt_word_length) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, '${palette.join('|')}', 0, unixepoch(), unixepoch(), '', ${promptSize})`
+      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette, current_iteration, iteration_started_at, created_at, prompt, max_iterations) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, '${palette.join('|')}', 0, unixepoch(), unixepoch(), '', ${maxIterations})`
     );
   }
 
@@ -329,7 +329,7 @@ export default class Database {
 
   getActiveSessions(): Promise<Session[]> {
     return this.getAll(
-      `SELECT *, sessions.hash as hash, COUNT(session_prompts.hash) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash WHERE current_iteration < 100 GROUP BY sessions.hash ORDER BY created_at DESC`
+      `SELECT *, sessions.hash as hash, COUNT(session_prompts.hash) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash WHERE current_iteration < max_iterations GROUP BY sessions.hash ORDER BY created_at DESC`
     );
   }
 
@@ -347,7 +347,7 @@ export default class Database {
 
   getArchivedSessions(limit = 3, offset = 0): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration == 100 ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT * FROM sessions WHERE current_iteration == max_iterations ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
     );
   }
 

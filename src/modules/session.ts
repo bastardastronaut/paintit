@@ -227,10 +227,8 @@ export default async (
 
     const hash = sha256(canvas);
 
-    const promptSize = 3 + Math.floor(Math.random() * 5);
-
     await Promise.all([
-      database.insertSession(hash, columns, rows, palette, promptSize),
+      database.insertSession(hash, columns, rows, palette, ITERATION_COUNT),
       filesystem.saveFile(canvas),
     ]);
   };
@@ -238,7 +236,6 @@ export default async (
   const loadSession = (sessionHash: string) => {
     return database.getSessionByHash(sessionHash).then((s) => {
       if (!s) throw new Error("session loading failed");
-      const promptSize = s.prompt_word_length || DEFAULT_PROMPT_WORD_LENGTH;
 
       return {
         palette: s.palette.split("|"),
@@ -249,12 +246,11 @@ export default async (
         iterationStartedAt: s.iteration_started_at,
         iterationEndsAt: s.iteration_started_at + ITERATION_LENGTH,
         revision: s.revision,
-        promptSize,
         participants: s.participants,
         txHash: s.tx_hash,
         prompt: s.prompt,
         createdAt: s.created_at,
-        maxIterations: ITERATION_COUNT,
+        maxIterations: s.max_iterations,
       };
     });
   };
@@ -442,7 +438,7 @@ export default async (
     );
 
     return database
-      .progressSession(s.hash, ITERATION_COUNT)
+      .progressSession(s.hash, s.max_iterations)
       .then(() =>
         database.insertTransactions(
           contributions.map(([identity, contribution]) => ({
@@ -620,6 +616,7 @@ export default async (
             iteration_started_at,
             current_iteration,
             prompt,
+            max_iterations,
             revision,
           }) => ({
             revision,
@@ -634,7 +631,7 @@ export default async (
             sessionType: session_type,
             iterationStartedAt: iteration_started_at,
             iterationEndsAt: iteration_started_at + ITERATION_LENGTH,
-            maxIterations: ITERATION_COUNT,
+            maxIterations: max_iterations,
           })
         )
       ),

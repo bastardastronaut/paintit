@@ -9,6 +9,12 @@ export enum RequestType {
   Create,
 }
 
+const METRICS = {
+  [RequestType.Read]: 80,
+  [RequestType.Mutate]: 40,
+  [RequestType.Create]: 4,
+};
+
 export const requests = new Map<RequestType, Map<string, number>>([
   [RequestType.Read, new Map()],
   [RequestType.Mutate, new Map()],
@@ -54,9 +60,12 @@ const monitorRequest =
 
     if (
       blacklist.has(ip) ||
-      (requestType === RequestType.Read && requestCount > 100) ||
-      (requestType === RequestType.Mutate && requestCount > 50) ||
-      (requestType === RequestType.Create && requestCount > 5)
+      (requestType === RequestType.Read &&
+        requestCount > METRICS[RequestType.Read]) ||
+      (requestType === RequestType.Mutate &&
+        requestCount > METRICS[RequestType.Mutate]) ||
+      (requestType === RequestType.Create &&
+        requestCount > METRICS[RequestType.Create])
     ) {
       blacklist.add(ip);
 
@@ -75,18 +84,22 @@ const monitorRequest =
       else requestTypeMap.set(ip, requestCount - 1);
     });
 
-    setTimeout(
-      next,
-      Math.pow(
-        2,
-        requestCount -
-          (requestType === RequestType.Read
-            ? 24
-            : requestType === RequestType.Mutate
-            ? 10
-            : 5)
-      ) * 1000
-    );
+    next()
+
+    /*
+    const penalty =
+      requestCount -
+      (requestType === RequestType.Read
+        ? METRICS[RequestType.Read] / 2
+        : requestType === RequestType.Mutate
+        ? METRICS[RequestType.Mutate] / 2
+        : METRICS[RequestType.Create] / 2);
+
+    if (penalty > 0) {
+      clock.in(penalty).then(next);
+    } else {
+      next();
+    }*/
   };
 
 export default monitorRequest;
