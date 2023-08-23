@@ -775,7 +775,7 @@ export default async (
       try {
         const r = session.rows * session.columns;
         const consensusRequirement =
-          4 * Math.round((Math.log(r) / Math.log(2)) * (r / 16384));
+          1 * Math.round((Math.log(r) / Math.log(2)) * (r / 16384));
 
         const matchingPrompts = await database.getMatchingPrompts(
           sessionHash,

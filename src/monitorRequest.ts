@@ -75,7 +75,18 @@ const monitorRequest =
       else requestTypeMap.set(ip, requestCount - 1);
     });
 
-    next();
+    setTimeout(
+      next,
+      Math.pow(
+        2,
+        requestCount -
+          (requestType === RequestType.Read
+            ? 24
+            : requestType === RequestType.Mutate
+            ? 10
+            : 5)
+      ) * 1000
+    );
   };
 
 export default monitorRequest;
