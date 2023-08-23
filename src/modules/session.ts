@@ -21,17 +21,18 @@ import GIFEncoder from "gifencoder";
 import { createCanvas, createImageData } from "canvas";
 import spellCheck from "../spellCheck";
 import { generatePalette2, getDistance } from "./utils";
+import {
+  PALETTE_SIZE,
+  ITERATION_LENGTH,
+  ITERATION_COUNT,
+  ITERATION_PAINT,
+  INVITATION_BONUS,
+  DEFAULT_PAINT,
+  UNLOCKED_PAINT,
+  DEFAULT_PAINT_EMAIL_VERIFIED,
+  CONSENSUS_MULTIPLIER,
+} from "../consts";
 
-const ITERATION_LENGTH = 1 * 60;
-const ITERATION_COUNT = 100;
-const ITERATION_PAINT = 1500; // TBD: will depend on stage contribution and verification status
-const DEFAULT_PAINT = 3000;
-const UNLOCKED_PAINT = 1000;
-const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
-const DEFAULT_PAINT_VIP = 3000;
-const INVITATION_BONUS = 100;
-const BATCH_FRAMERATE_SECONDS = 10;
-const DEFAULT_PROMPT_WORD_LENGTH = 5;
 const EXCLUDED = ["the", "a", "an"];
 
 /*
@@ -222,7 +223,7 @@ export default async (
       DIMENSIONS[size][Math.floor(Math.random() * DIMENSIONS[size].length)];
     // const paletteIndex = Math.floor(Math.random() * palettes.length);
     const paletteIndex = 0;
-    const palette = generatePalette2(8);
+    const palette = generatePalette2(PALETTE_SIZE);
     const canvas = paint.generateDrawing(palette, columns, rows, 1);
 
     const hash = sha256(canvas);
@@ -368,8 +369,7 @@ export default async (
             historyLengths.get(activity.positionIndex) || 0,
             activity.colorIndex,
             canvasArray[activity.positionIndex]
-          ) /
-            50 +
+          ) * 2 +
             (contributions.get(activity.identity as string) || 0)
         );
 
@@ -393,7 +393,7 @@ export default async (
       ]);
 
     const artValue = contributions.reduce(
-      (acc, [i, c]) => acc + Math.floor(c / 100) * 100,
+      (acc, [i, c]) => acc + c,
       0
     );
 
@@ -443,7 +443,7 @@ export default async (
         database.insertTransactions(
           contributions.map(([identity, contribution]) => ({
             identity,
-            amount: Math.floor(contribution / 100) * 100,
+            amount: contribution,
             message: s.hash,
           }))
         )
@@ -488,7 +488,7 @@ export default async (
   const currentSessions = await database.getActiveSessions();
 
   const progressSession = (session: Session): Promise<null> => {
-    if (session.current_iteration === ITERATION_COUNT - 1) {
+    if (session.current_iteration === session.max_iterations - 1) {
       return finishSession(session);
     }
 
@@ -523,7 +523,7 @@ export default async (
       );
 
   for (const s of currentSessions) {
-    if (s.current_iteration > 0 && s.current_iteration < ITERATION_COUNT) {
+    if (s.current_iteration > 0 && s.current_iteration < s.max_iterations) {
       clock
         .at(s!.iteration_started_at + ITERATION_LENGTH)
         .then(() => progressSession(s));
@@ -708,23 +708,20 @@ export default async (
         ctx.putImageData(canvasToImageData(canvasArray), 0, 0);
         encoder.addFrame(ctx as any);
 
-        let activityStartedAt = 0;
+        let lastIteration = 0;
 
         for (const activity of activityLog) {
-          if (activityStartedAt === 0) {
-            activityStartedAt = activity.created_at;
-          }
-          if (
-            activity.created_at - activityStartedAt >
-            BATCH_FRAMERATE_SECONDS
-          ) {
+          if (lastIteration < activity.iteration) {
+            lastIteration = activity.iteration;
             ctx.putImageData(canvasToImageData(canvasArray), 0, 0);
             encoder.addFrame(ctx as any);
-            activityStartedAt = 0;
           }
 
           canvasArray[activity.position_index] = activity.color_index;
         }
+
+        encoder.addFrame(ctx as any);
+
         // the value of a painting can be the amount of meaningful contributions
         // it will determine the amount of ART sent out anyway
         //
@@ -772,7 +769,8 @@ export default async (
       try {
         const r = session.rows * session.columns;
         const consensusRequirement =
-          1 * Math.round((Math.log(r) / Math.log(2)) * (r / 16384));
+          CONSENSUS_MULTIPLIER *
+          Math.round((Math.log(r) / Math.log(2)) * (r / 16384));
 
         const matchingPrompts = await database.getMatchingPrompts(
           sessionHash,
@@ -917,7 +915,7 @@ export default async (
           throw new BadRequestError("incorrect position");
         if (
           session.current_iteration === 0 ||
-          session.current_iteration === ITERATION_COUNT
+          session.current_iteration === session.max_iterations
         )
           throw new NotFoundError("session not in correct state");
         const canvas = await filesystem.loadFile(session.revision);
@@ -968,7 +966,7 @@ export default async (
 
         if (
           paintCost >=
-          (session.current_iteration < ITERATION_COUNT / 2 ? 200 : 200)
+          (session.current_iteration < session.max_iterations / 2 ? 200 : 200)
         ) {
           throw new BadRequestError("pixel already fixed");
         }

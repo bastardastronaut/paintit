@@ -36,6 +36,7 @@ import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import Authorize, { authorizations } from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
 
+import { APP_PATH, FS_PATH, WALLET } from "./consts";
 import config from "./config";
 
 const PORT = process.env.PORT || 8081;
@@ -64,16 +65,13 @@ const notify = (hash: string, event: string, message: string) => {
   }
 };
 
-const PATH = process.env.APP_PATH || `${__dirname}/..`;
-const FS_PATH = process.env.FILESYSTEM_PATH || `${PATH}/drawings`;
 const database = new Database(FS_PATH, {
   onIterationProgress: (hash, iteration) =>
     notify(hash, "iteration-progress", iteration.toString()),
 });
 
 const masterWallet = new Wallet(
-  process.env.ACCOUNT_ADDRESS ||
-    "0dd740f1f726433da7a8dedb77c44b20ba7144245c8f2e138e000453398c9f8d",
+  WALLET,
   new JsonRpcProvider(config.ethereum.key)
 );
 
@@ -840,10 +838,10 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      app.use(express.static(`${PATH}/public`));
+      app.use(express.static(`${APP_PATH}/public`));
       app.get("*", (req, res) =>
         res.sendFile(
-          path.resolve("client", "build", `${PATH}/public/index.html`)
+          path.resolve("client", "build", `${APP_PATH}/public/index.html`)
         )
       );
 
