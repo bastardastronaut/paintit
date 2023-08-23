@@ -3,6 +3,8 @@ import { TooManyRequestsError } from "./errors";
 import Clock from "./modules/clock";
 import requestIp from "request-ip";
 
+import { RATE_LIMIT_READ, RATE_LIMIT_MUTATE, RATE_LIMIT_CREATE } from './consts'
+
 export enum RequestType {
   Read,
   Mutate,
@@ -10,9 +12,9 @@ export enum RequestType {
 }
 
 const METRICS = {
-  [RequestType.Read]: 80,
-  [RequestType.Mutate]: 40,
-  [RequestType.Create]: 4,
+  [RequestType.Read]: RATE_LIMIT_READ,
+  [RequestType.Mutate]: RATE_LIMIT_MUTATE,
+  [RequestType.Create]: RATE_LIMIT_CREATE,
 };
 
 export const requests = new Map<RequestType, Map<string, number>>([

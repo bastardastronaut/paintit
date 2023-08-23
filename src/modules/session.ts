@@ -369,7 +369,8 @@ export default async (
             historyLengths.get(activity.positionIndex) || 0,
             activity.colorIndex,
             canvasArray[activity.positionIndex]
-          ) * 2 +
+          ) *
+            2 +
             (contributions.get(activity.identity as string) || 0)
         );
 
@@ -392,10 +393,7 @@ export default async (
         filesystem.loadFile(s.hash),
       ]);
 
-    const artValue = contributions.reduce(
-      (acc, [i, c]) => acc + c,
-      0
-    );
+    const artValue = contributions.reduce((acc, [i, c]) => acc + c, 0);
 
     if (!_initialCanvas) throw new Error("missing canvas");
 
@@ -942,16 +940,18 @@ export default async (
               ]
             : originalColorIndex;
 
-        if (
-          !findClosestColors(
-            session.palette.split("|"),
-            originalColorIndex,
-            6
-          ).includes(colorIndex)
-        )
+        const palette = session.palette.split("|");
+
+        const matchedColorIndex = findClosestColors(
+          palette,
+          originalColorIndex,
+          8
+        ).findIndex((c) => c === colorIndex);
+
+        if (matchedColorIndex === -1)
           throw new BadRequestError("transition not allowed");
 
-        const paintCost = getPaintCost(
+        const baseCost = getPaintCost(
           history.reduce(
             (acc, a) =>
               a.iteration === session!.current_iteration ||
@@ -963,9 +963,9 @@ export default async (
           colorIndex,
           newCanvas[positionIndex]
         );
-
+        const paintCost = (matchedColorIndex < 4 ? 1 : 2) * baseCost;
         if (
-          paintCost >=
+          baseCost >=
           (session.current_iteration < session.max_iterations / 2 ? 200 : 200)
         ) {
           throw new BadRequestError("pixel already fixed");

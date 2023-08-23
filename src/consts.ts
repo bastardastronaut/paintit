@@ -13,10 +13,27 @@ export const DEFAULT_PAINT = parseInt(
 export const CONSENSUS_MULTIPLIER = parseInt(
   process.env.CONSENSUS_MULTIPLIER ?? (1).toString()
 );
-export const PALETTE_SIZE = parseInt(
-  process.env.PALETTE_SIZE ?? (8).toString()
+
+export const UNLOCKED_PAINT = parseInt(
+  process.env.UNLOCKED_PAINT ?? (1000).toString()
 );
-export const UNLOCKED_PAINT = 1000;
+
+export const PALETTE_SIZE = parseInt(
+  process.env.PALETTE_SIZE ?? (12).toString()
+);
+
+export const RATE_LIMIT_READ = parseInt(
+  process.env.RATE_LIMIT_READ ?? (250).toString()
+);
+
+export const RATE_LIMIT_MUTATE = parseInt(
+  process.env.RATE_LIMIT_MUTATE ?? (50).toString()
+);
+
+export const RATE_LIMIT_CREATE = parseInt(
+  process.env.RATE_LIMIT_CREATE ?? (5).toString()
+);
+
 export const DEFAULT_PAINT_EMAIL_VERIFIED = 2000;
 export const DEFAULT_PAINT_VIP = 3000;
 export const INVITATION_BONUS = 100;
