@@ -113,6 +113,12 @@ export default class Database {
     });
   }
 
+  insertUsername(identity: string, username: string) {
+    return this.upsert(
+      `INSERT INTO users (identity, nickname) VALUES('${identity}', '${username}')`
+    );
+  }
+
   insertUser(accountId: string) {
     return this.upsert(
       `INSERT INTO users (identity, account_id, tokens, created_at) VALUES('${accountId}', '${accountId}', 0, unixepoch())`
@@ -187,7 +193,11 @@ export default class Database {
     maxIterations: number
   ) {
     return this.upsert(
-      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette, current_iteration, iteration_started_at, created_at, prompt, max_iterations) VALUES('${hash}', ${SessionType.FREE}, '${hash}', ${rows}, ${columns}, '${palette.join('|')}', 0, unixepoch(), unixepoch(), '', ${maxIterations})`
+      `INSERT INTO sessions (hash, session_type, revision, rows, columns, palette, current_iteration, iteration_started_at, created_at, prompt, max_iterations) VALUES('${hash}', ${
+        SessionType.FREE
+      }, '${hash}', ${rows}, ${columns}, '${palette.join(
+        "|"
+      )}', 0, unixepoch(), unixepoch(), '', ${maxIterations})`
     );
   }
 
@@ -309,6 +319,10 @@ export default class Database {
     return this.get(`SELECT * FROM users WHERE identity='${identity}'`);
   }
 
+  getUsernames() {
+    return this.getAll(`SELECT identity, nickname FROM users`);
+  }
+
   getUserSessionPaint(sessionHash: string, identity: string) {
     return this.get<SessionPaint>(
       `SELECT * FROM session_paint WHERE hash='${sessionHash}' AND identity='${identity}'`
@@ -323,13 +337,13 @@ export default class Database {
 
   getSessionByHash(hash: string): Promise<null | Session> {
     return this.get<Session>(
-      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON session_prompts.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY sessions.hash`
-    );
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON session_prompts.hash = sessions.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY sessions.hash`
+    )
   }
 
   getActiveSessions(): Promise<Session[]> {
     return this.getAll(
-      `SELECT *, sessions.hash as hash, COUNT(session_prompts.hash) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash WHERE current_iteration < max_iterations GROUP BY sessions.hash ORDER BY created_at DESC`
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration < max_iterations GROUP BY sessions.hash ORDER BY created_at DESC`
     );
   }
 
@@ -347,7 +361,7 @@ export default class Database {
 
   getArchivedSessions(limit = 3, offset = 0): Promise<Session[]> {
     return this.getAll(
-      `SELECT * FROM sessions WHERE current_iteration == max_iterations ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration == max_iterations  GROUP BY sessions.hash ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
     );
   }
 
@@ -375,9 +389,28 @@ ORDER BY created_at ASC`
   }
 
   getSessionParticipants(sessionHash: string) {
-    return this.getAll<{ identity: string }>(
-      `SELECT identity FROM session_prompts WHERE hash='${sessionHash}'`
-    );
+    return Promise.all([
+      // eventually it'll be just like this
+      this.getAll<{ identity: string }>(
+        `SELECT identity FROM session_prompts WHERE hash='${sessionHash}'`
+      ),
+      this.getAll<{ identity: string }>(
+        `SELECT identity FROM session_paint WHERE hash='${sessionHash}'`
+      ),
+    ]).then(([prompts,paints]) => {
+      // this probably should be done on SQL level..
+      const identities = new Set()
+
+      for (const i of prompts) {
+        identities.add(i)
+      }
+
+      for (const i of paints) {
+        identities.add(i)
+      }
+
+      return Array.from(identities).map(i => ({identity: i}))
+    });
   }
 
   isParticipant(sessionHash: string, identity: string) {

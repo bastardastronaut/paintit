@@ -2,10 +2,10 @@ export const ITERATION_LENGTH = parseInt(
   process.env.ITERATION_LENGTH ?? (1 * 60).toString()
 );
 export const ITERATION_COUNT = parseInt(
-  process.env.ITERATION_COUNT ?? (10).toString()
+  process.env.ITERATION_COUNT ?? (15).toString()
 );
 export const ITERATION_PAINT = parseInt(
-  process.env.ITERATION_PAINT ?? (125).toString()
+  process.env.ITERATION_PAINT ?? (225).toString()
 );
 export const DEFAULT_PAINT = parseInt(
   process.env.DEFAULT_PAINT ?? (250).toString()
@@ -19,7 +19,7 @@ export const UNLOCKED_PAINT = parseInt(
 );
 
 export const PALETTE_SIZE = parseInt(
-  process.env.PALETTE_SIZE ?? (12).toString()
+  process.env.PALETTE_SIZE ?? (8).toString()
 );
 
 export const RATE_LIMIT_READ = parseInt(

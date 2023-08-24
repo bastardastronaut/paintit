@@ -103,8 +103,8 @@ export default async (
       transactions.loadTransactions(identity),
 
     // token should defend against replay
-    registerAccount: (identity: string) =>
-      account.requestAccountCreation(identity),
+    registerAccount: (identity: string, username: string) => 
+      account.createAccount(identity, username),
 
     linkAccount: (
       identity: string,
@@ -141,6 +141,7 @@ export default async (
     },
 
     getAccount: (hash: string, signature: string, timestamp: number) => {},
+    getUsernames: () => account.loadUsernames(),
 
     postAuthorizationSequence: (identity: string, signature: string) => {
       if (

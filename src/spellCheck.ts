@@ -4,7 +4,7 @@ import fs from "fs";
 const readFileLines = (filename: string) =>
   fs.readFileSync(filename).toString().split("\n");
 
-const FORBIDDEN_COMBINATIONS = readFileLines(`${__dirname}/badwords.txt`);
+export const FORBIDDEN_COMBINATIONS = readFileLines(`${__dirname}/badwords.txt`);
 
 const getDictionary = (dict: string) =>
   new Promise((resolve, reject) => {

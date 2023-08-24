@@ -513,9 +513,9 @@ export default async (
               .getUserMetrics(identity)
               .then(([userStatus, invitations]) =>
                 userStatus?.is_vip
-                  ? DEFAULT_PAINT +
+                  ? 2 * DEFAULT_PAINT +
                     (invitations?.invitationCount || 0) * INVITATION_BONUS
-                  : 0
+                  : DEFAULT_PAINT
               )
           : result.paint
       );
@@ -586,6 +586,7 @@ export default async (
             columns,
             hash,
             palette,
+            participants,
             session_type,
             prompt,
             created_at,
@@ -593,6 +594,7 @@ export default async (
             hash,
             rows,
             columns,
+            participants,
             prompt,
             palette: palette.split("|"),
             sessionType: session_type,
@@ -963,13 +965,8 @@ export default async (
           colorIndex,
           newCanvas[positionIndex]
         );
+
         const paintCost = (matchedColorIndex < 4 ? 1 : 2) * baseCost;
-        if (
-          baseCost >=
-          (session.current_iteration < session.max_iterations / 2 ? 200 : 200)
-        ) {
-          throw new BadRequestError("pixel already fixed");
-        }
 
         if (newCanvas[positionIndex] === colorIndex)
           throw new BadRequestError("already the same color");

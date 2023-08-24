@@ -30,7 +30,7 @@ import {
   UnauthorizedError,
   BadRequestError,
 } from "./errors";
-import spellCheck from "./spellCheck";
+import spellCheck, { FORBIDDEN_COMBINATIONS } from "./spellCheck";
 import palettes, { atari } from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import Authorize, { authorizations } from "./authorize";
@@ -217,6 +217,7 @@ Promise.all([database.initialize(), contract.initialize()])
       getArchivedSessions,
       getSessionAnimation,
       getTransactions,
+      getUsernames,
 
       // endpoints behind authorization
       // payload needs sanitization
@@ -431,15 +432,34 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
+      // well this is technically not very good
+      // it leaks size of database etc.
+      // still for now it's probably fine.
+      app.get(`${BASE_URL}/usernames`, (req, res) =>
+        getUsernames()
+          .then((result) => res.send(result))
+          .catch((e) => processError(res, e))
+      );
+
       // TODO: watch for SQL injection!
 
       app.post(
         `${BASE_URL}/create-account`,
-        bodyParser.urlencoded({ limit: 64, extended: true }),
-        (req, res) =>
-          registerAccount(req.body.account)
-            .then((result) => res.send(encodeBase64(result)))
-            .catch((e) => processError(res, e))
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        (req, res) => {
+          if (
+            !req.body.username.match(/^[a-z0-9]+$/i) ||
+            FORBIDDEN_COMBINATIONS.includes(req.body.username.toLowerCase()) ||
+            req.body.username.length > 32
+          ) {
+            console.log(req.body.username);
+            return res.sendStatus(400);
+          }
+
+          return registerAccount(req.body.account, req.body.username)
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
       );
 
       app.post(
@@ -703,7 +723,7 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      // checks against
+      /* checks against
       app.post(
         `${BASE_URL}/account/:identity/email/verify`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
@@ -711,7 +731,7 @@ Promise.all([database.initialize(), contract.initialize()])
           registerAccount(req.body.account)
             .then((result) => res.send(encodeBase64(result)))
             .catch((e) => processError(res, e))
-      );
+      );*/
 
       app.post(
         `${BASE_URL}/handover/:identity`,

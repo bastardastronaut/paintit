@@ -59,11 +59,11 @@ export default (clock: Clock, database: Database, paint: Paint) => {
 
       clock.in(CAPTCHA_TIMEOUT).then(() => captchas.delete(challengeId));
 
-      return challenge;
+      return null;
     },
-    createAccount: (address: string, email?: string, accountId?: string) => {
+    createAccount: (address: string, username: string, email?: string, accountId?: string) => {
       // create user
-      return database.insertUser(address);
+      return database.insertUsername(address, username);
     },
     updateAccount: () => {
       // verify captcha token
@@ -141,5 +141,7 @@ export default (clock: Clock, database: Database, paint: Paint) => {
     ) => {},
 
     respondToHandover: (identity: string, response: string) => {},
+
+    loadUsernames: () => database.getUsernames()
   };
 };
