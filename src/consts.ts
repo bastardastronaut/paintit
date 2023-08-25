@@ -23,11 +23,11 @@ export const PALETTE_SIZE = parseInt(
 );
 
 export const TIMEOUT_USER_COUNT_CHANGE = parseInt(
-  process.env.RATE_LIMIT_CREATE ?? (3).toString()
+  process.env.TIMEOUT_USER_COUNT_CHANGE ?? (3).toString()
 );
 
 export const TIMEOUT_USER_COUNT_PENALTY = parseInt(
-  process.env.RATE_LIMIT_CREATE ?? (25).toString()
+  process.env.TIMEOUT_USER_COUNT_PENALTY ?? (25).toString()
 );
 
 export const RATE_LIMIT_READ = parseInt(
