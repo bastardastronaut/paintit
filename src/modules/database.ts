@@ -1,4 +1,5 @@
 import { verbose, Database as SQLiteDatabse } from "sqlite3";
+import { UnprocessableEntityError } from "../errors";
 
 export type Session = {
   tx_hash: string;
@@ -116,7 +117,17 @@ export default class Database {
   insertUsername(identity: string, username: string) {
     return this.upsert(
       `INSERT INTO users (identity, nickname) VALUES('${identity}', '${username}')`
-    );
+    ).catch(() => {
+      throw new UnprocessableEntityError();
+    });
+  }
+
+  setUsername(identity: string, username: string) {
+    return this.upsert(
+      `UPDATE users SET nickname='${username}' WHERE identity='${identity}'`
+    ).catch(() => {
+      throw new UnprocessableEntityError();
+    });
   }
 
   insertUser(accountId: string) {
@@ -338,12 +349,18 @@ export default class Database {
   getSessionByHash(hash: string): Promise<null | Session> {
     return this.get<Session>(
       `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON session_prompts.hash = sessions.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY sessions.hash`
-    )
+    );
   }
 
-  getActiveSessions(): Promise<Session[]> {
+  // hmm consider adding archived sessions as well if identity is present
+  // then we won't need contributions section on account page
+  getActiveSessions(identity?: string): Promise<Session[]> {
     return this.getAll(
-      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration < max_iterations GROUP BY sessions.hash ORDER BY created_at DESC`
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration < max_iterations ${
+        identity
+          ? `AND (session_prompts.identity = '${identity}' OR session_paint.identity = '${identity}')`
+          : ""
+      } GROUP BY sessions.hash ORDER BY created_at DESC`
     );
   }
 
@@ -397,19 +414,19 @@ ORDER BY created_at ASC`
       this.getAll<{ identity: string }>(
         `SELECT identity FROM session_paint WHERE hash='${sessionHash}'`
       ),
-    ]).then(([prompts,paints]) => {
+    ]).then(([prompts, paints]) => {
       // this probably should be done on SQL level..
-      const identities = new Set()
+      const identities = new Set();
 
       for (const i of prompts) {
-        identities.add(i)
+        identities.add(i.identity);
       }
 
       for (const i of paints) {
-        identities.add(i)
+        identities.add(i.identity);
       }
 
-      return Array.from(identities).map(i => ({identity: i}))
+      return Array.from(identities).map((i) => ({ identity: i }));
     });
   }
 

@@ -288,28 +288,29 @@ export default async (
             const metadata = new Uint8Array(art.slice(0, 75));
             const rows = toNumber(metadata.slice(64, 66));
             const columns = toNumber(metadata.slice(66, 68));
-            let seek = 75 + rows * columns;
+            const paletteLength = toNumber(metadata.slice(74, 75));
+            let seek = 75 + rows * columns + paletteLength * 3;
             const signatures = toNumber(art.slice(seek, seek + 4));
             seek += signatures * 85 + 4;
 
             const result = [];
             for (let i = seek; i < art.length; i += 64) {
               const createdAt = toNumber(art.slice(i, i + 6));
-              const identity = hexlify(
+              const _identity = hexlify(
                 new Uint8Array(art.slice(i + 38, i + 58))
               );
               const colorIndex = toNumber(art.slice(i + 58, i + 59));
               const positionIndex = toNumber(art.slice(i + 59, i + 63));
               const iteration = toNumber(art.slice(i + 63, i + 64));
-              if (positionIndex > rows * columns)
-                throw new Error(positionIndex.toString());
-              result.push({
-                createdAt,
-                colorIndex,
-                positionIndex,
-                identity,
-                iteration,
-              });
+
+              if (!identity || _identity === identity.toLowerCase())
+                result.push({
+                  createdAt,
+                  colorIndex,
+                  positionIndex,
+                  identity: _identity,
+                  iteration,
+                });
             }
 
             return result;
@@ -397,6 +398,8 @@ export default async (
 
     if (!_initialCanvas) throw new Error("missing canvas");
 
+    const palette = s.palette.split("|");
+
     // TODO: consider storing prompt history as well
 
     const finalFile = getBytes(
@@ -406,8 +409,8 @@ export default async (
         zeroPadValue(toBeArray(s.rows), 2),
         zeroPadValue(toBeArray(s.columns), 2),
         zeroPadValue(toBeArray(s.created_at), 6),
-        // TODO: add palette
-        zeroPadValue(toBeArray(3), 1),
+        zeroPadValue(toBeArray(palette.length), 1),
+        ...palette.map((hex) => `0x${hex.slice(1)}`),
         new Uint8Array(_initialCanvas),
         zeroPadValue(toBeArray(signatures.length), 4),
         ...signatures.map(({ signature, identity }) =>
@@ -602,8 +605,14 @@ export default async (
           })
         )
       ),
-    loadSessions: () =>
-      database.getActiveSessions().then((sessions) =>
+
+    loadSessionParticipants: (sessionHash: string) =>
+      database
+        .getSessionParticipants(sessionHash)
+        .then((participants) => participants.map(({ identity }) => identity)),
+
+    loadSessions: (identity?: string) =>
+      database.getActiveSessions(identity).then((sessions) =>
         sessions.map(
           ({
             rows,
@@ -913,6 +922,10 @@ export default async (
         if (!session) throw new NotFoundError("session not found");
         if (positionIndex < 0 || positionIndex > session.rows * session.columns)
           throw new BadRequestError("incorrect position");
+
+        const palette = session.palette.split("|");
+        if (colorIndex >= palette.length)
+          throw new BadRequestError("incorrect color");
         if (
           session.current_iteration === 0 ||
           session.current_iteration === session.max_iterations
@@ -941,8 +954,6 @@ export default async (
                 positionIndex
               ]
             : originalColorIndex;
-
-        const palette = session.palette.split("|");
 
         const matchedColorIndex = findClosestColors(
           palette,

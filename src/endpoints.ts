@@ -77,7 +77,7 @@ export default async (
         .spendArt(identity, 1000, sessionHash)
         .then(() => session.unlockMorePaint(sessionHash, identity)),
 
-    getSessions: () => session.loadSessions(),
+    getSessions: (identity?: string) => session.loadSessions(identity),
     getArchivedSessions: (limit?: number, offset?: number) =>
       session.loadArchivedSessions(limit, offset),
     getSession: (hash: string) => session.loadSession(hash),
@@ -103,9 +103,14 @@ export default async (
       transactions.loadTransactions(identity),
 
     // token should defend against replay
-    registerAccount: (identity: string, username: string) => 
+    postRegisterAccount: (identity: string, username: string) =>
       account.createAccount(identity, username),
 
+    postSetUsername: (identity: string, username: string) =>
+      account.updateUsername(identity, username),
+
+    getSessionParticipants: (sessionHash: string) =>
+      session.loadSessionParticipants(sessionHash),
     linkAccount: (
       identity: string,
       account: string,

@@ -61,14 +61,21 @@ export default (clock: Clock, database: Database, paint: Paint) => {
 
       return null;
     },
-    createAccount: (address: string, username: string, email?: string, accountId?: string) => {
+    createAccount: (
+      address: string,
+      username: string,
+      email?: string,
+      accountId?: string
+    ) => {
       // create user
       return database.insertUsername(address, username);
     },
-    updateAccount: () => {
-      // verify captcha token
-      // update account details
-      console.log("creating account");
+
+    updateUsername: (identity: string, username: string) => {
+      return database.getUserByIdentity(identity).then((existingUser) => {
+        if (existingUser) return database.setUsername(identity, username);
+        return database.insertUsername(identity, username);
+      });
     },
     solveCaptcha: (challengeId: string, solution: number) => {
       const captcha = captchas.get(challengeId);
@@ -123,9 +130,13 @@ export default (clock: Clock, database: Database, paint: Paint) => {
         .then(() => database.loadCaptchaAttempts(captcha.filename))
         .then((attempts) => ({
           successRatio:
-            Math.round(100 * attempts.filter(
-              ({ outcome }) => outcome === CaptchaAttemptOutcome.SUCCESS
-            ).length / attempts.length) / 100,
+            Math.round(
+              (100 *
+                attempts.filter(
+                  ({ outcome }) => outcome === CaptchaAttemptOutcome.SUCCESS
+                ).length) /
+                attempts.length
+            ) / 100,
           solution: captcha.solution,
         }));
     },
@@ -142,6 +153,6 @@ export default (clock: Clock, database: Database, paint: Paint) => {
 
     respondToHandover: (identity: string, response: string) => {},
 
-    loadUsernames: () => database.getUsernames()
+    loadUsernames: () => database.getUsernames(),
   };
 };

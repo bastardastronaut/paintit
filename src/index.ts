@@ -28,6 +28,7 @@ import {
   NotFoundError,
   TooManyRequestsError,
   UnauthorizedError,
+  UnprocessableEntityError,
   BadRequestError,
 } from "./errors";
 import spellCheck, { FORBIDDEN_COMBINATIONS } from "./spellCheck";
@@ -35,8 +36,22 @@ import palettes, { atari } from "./palettes";
 import monitorRequest, { requests, RequestType } from "./monitorRequest";
 import Authorize, { authorizations } from "./authorize";
 import generateCaptcha4 from "./modules/_generateCaptcha";
+import {
+  isAlphanumeric,
+  isValidIdentity,
+  isValidHash,
+  isValidSignature,
+  isValidNumber,
+  middleware as validate,
+} from "./validators";
 
-import { APP_PATH, FS_PATH, WALLET } from "./consts";
+import {
+  APP_PATH,
+  FS_PATH,
+  WALLET,
+  TIMEOUT_USER_COUNT_CHANGE,
+  TIMEOUT_USER_COUNT_PENALTY,
+} from "./consts";
 import config from "./config";
 
 const PORT = process.env.PORT || 8081;
@@ -204,6 +219,7 @@ Promise.all([database.initialize(), contract.initialize()])
     ({
       // publicly available endpoints
       getSessionCanvas,
+      getSessionParticipants,
       getSessionInitialCanvas,
       getSession,
       getSessionPaint,
@@ -222,7 +238,8 @@ Promise.all([database.initialize(), contract.initialize()])
       // endpoints behind authorization
       // payload needs sanitization
       postAuthorizationSequence,
-      registerAccount,
+      postRegisterAccount,
+      postSetUsername,
       postSessionPaint,
       postSessionPrompt,
       postUnlockMorePaint,
@@ -245,6 +262,8 @@ Promise.all([database.initialize(), contract.initialize()])
             ? 400
             : e instanceof UnauthorizedError
             ? 401
+            : e instanceof UnprocessableEntityError
+            ? 422
             : e instanceof TooManyRequestsError
             ? 429
             : 500
@@ -254,11 +273,15 @@ Promise.all([database.initialize(), contract.initialize()])
       app.use(monitorRequest(clock));
       app.use(cors());
 
-      app.get(`${BASE_URL}/transactions/:identity`, (req, res) => {
-        return getTransactions(req.params.identity)
-          .then((transactions) => res.send(transactions))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/transactions/:identity`,
+        validate([[isValidIdentity, ({ params }) => params.identity]]),
+        (req, res) => {
+          return getTransactions(req.params.identity)
+            .then((transactions) => res.send(transactions))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       app.get(`${BASE_URL}/palettes`, (req, res) => {
         res.send(palettes);
@@ -274,6 +297,18 @@ Promise.all([database.initialize(), contract.initialize()])
           .catch((e) => processError(res, e));
       });
 
+      app.get(
+        `${BASE_URL}/sessions/participant/:identity`,
+        validate([[isValidIdentity, ({ params }) => params.identity]]),
+        (req, res) => {
+          if (!isValidIdentity(req.params.identity, true))
+            return res.sendStatus(400);
+          getSessions(req.params.identity)
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
+
       app.get(`${BASE_URL}/archived-sessions`, (req, res) => {
         getArchivedSessions(
           parseInt(req.query.limit as string) || 5,
@@ -286,6 +321,10 @@ Promise.all([database.initialize(), contract.initialize()])
       // this is a public endpoint, just looking doesn't mean it's bound to change
       app.get(
         `${BASE_URL}/sessions/:sessionHash/history/:positionIndex`,
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidNumber(), ({ params }) => params.positionIndex],
+        ]),
         (req, res) => {
           getPixelHistory(
             req.params.sessionHash,
@@ -305,20 +344,39 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash`, (req, res) => {
-        return getSession(req.params.sessionHash)
-          .then((session) => res.send(session))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSession(req.params.sessionHash)
+            .then((session) => res.send(session))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash/canvas`, (req, res) => {
-        return getSessionCanvas(req.params.sessionHash)
-          .then((canvas) => res.end(canvas, "binary"))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/participants`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSessionParticipants(req.params.sessionHash)
+            .then((participants) => res.send(participants))
+            .catch((e) => processError(res, e));
+        }
+      );
+
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/canvas`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSessionCanvas(req.params.sessionHash)
+            .then((canvas) => res.end(canvas, "binary"))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       app.get(
         `${BASE_URL}/sessions/:sessionHash/initial-canvas`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
         (req, res) => {
           return getSessionInitialCanvas(req.params.sessionHash)
             .then((canvas) => res.end(canvas, "binary"))
@@ -326,31 +384,47 @@ Promise.all([database.initialize(), contract.initialize()])
         }
       );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash/contributions`, (req, res) => {
-        return getSessionContributions(req.params.sessionHash)
-          .then((contributions) => res.send(contributions.slice(0, 10)))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/contributions`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSessionContributions(req.params.sessionHash)
+            .then((contributions) => res.send(contributions.slice(0, 10)))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash/prompts`, (req, res) => {
-        return getSessionPrompts(req.params.sessionHash)
-          .then((prompts) => res.send(prompts.slice(0, 10)))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/prompts`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSessionPrompts(req.params.sessionHash)
+            .then((prompts) => res.send(prompts.slice(0, 10)))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash/image.gif`, (req, res) => {
-        // TODO: set HTTP headers to not cache the image
-        return getSessionSnapshot(req.params.sessionHash)
-          .then((stream) => stream.pipe(res))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/image.gif`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          // TODO: set HTTP headers to not cache the image
+          return getSessionSnapshot(req.params.sessionHash)
+            .then((stream) => stream.pipe(res))
+            .catch((e) => processError(res, e));
+        }
+      );
 
-      app.get(`${BASE_URL}/sessions/:sessionHash/animation.gif`, (req, res) => {
-        // TODO: set HTTP headers to not cache the image
-        return getSessionAnimation(req.params.sessionHash)
-          .then((stream) => stream.pipe(res))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/animation.gif`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          // TODO: set HTTP headers to not cache the image
+          return getSessionAnimation(req.params.sessionHash)
+            .then((stream) => stream.pipe(res))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       /*
     app.get(`${BASE_URL}/sessions/:sessionHash/history/:positionIndex`, (req, res) => {
@@ -361,6 +435,10 @@ Promise.all([database.initialize(), contract.initialize()])
 
       app.get(
         `${BASE_URL}/sessions/:sessionHash/activity/:identity`,
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidIdentity, ({ params }) => params.identity],
+        ]),
         (req, res) => {
           return getSessionActivity(req.params.sessionHash, req.params.identity)
             .then((result) => res.send(result))
@@ -369,14 +447,22 @@ Promise.all([database.initialize(), contract.initialize()])
       );
 
       // returns all activity until revision
-      app.get(`${BASE_URL}/sessions/:sessionHash/activity`, (req, res) => {
-        return getSessionActivity(req.params.sessionHash)
-          .then((result) => res.send(result))
-          .catch((e) => processError(res, e));
-      });
+      app.get(
+        `${BASE_URL}/sessions/:sessionHash/activity`,
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
+        (req, res) => {
+          return getSessionActivity(req.params.sessionHash)
+            .then((result) => res.send(result))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       app.get(
         `${BASE_URL}/sessions/:sessionHash/paint/:identity`,
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidIdentity, ({ params }) => params.identity],
+        ]),
         (req, res) => {
           return getSessionPaint(req.params.sessionHash, req.params.identity)
             .then((result) => res.send(result.toString()))
@@ -404,6 +490,7 @@ Promise.all([database.initialize(), contract.initialize()])
       app.post(
         `${BASE_URL}/account/:identity/withdrawals`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
+        validate([[isValidIdentity, ({ params }) => params.identity]]),
         authorize<{
           amount: number;
         }>((data) =>
@@ -422,6 +509,10 @@ Promise.all([database.initialize(), contract.initialize()])
 
       app.get(
         `${BASE_URL}/sessions/:sessionHash/prompt/:identity`,
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidIdentity, ({ params }) => params.identity],
+        ]),
         (req, res) => {
           return getSessionPromptByIdentity(
             req.params.sessionHash,
@@ -446,17 +537,14 @@ Promise.all([database.initialize(), contract.initialize()])
       app.post(
         `${BASE_URL}/create-account`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
+        validate([
+          [
+            isAlphanumeric({ isOptional: true, maxLength: 20 }),
+            ({ body }) => body.username,
+          ],
+        ]),
         (req, res) => {
-          if (
-            !req.body.username.match(/^[a-z0-9]+$/i) ||
-            FORBIDDEN_COMBINATIONS.includes(req.body.username.toLowerCase()) ||
-            req.body.username.length > 32
-          ) {
-            console.log(req.body.username);
-            return res.sendStatus(400);
-          }
-
-          return registerAccount(req.body.account, req.body.username)
+          return postRegisterAccount(req.body.account, req.body.username)
             .then((result) => res.send(result))
             .catch((e) => processError(res, e));
         }
@@ -465,17 +553,30 @@ Promise.all([database.initialize(), contract.initialize()])
       app.post(
         `${BASE_URL}/sessions/:sessionHash/unlock-paint/:identity`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidIdentity, ({ params }) => params.identity],
+        ]),
         authorize(() => Promise.resolve(new Uint8Array([0, 0, 3, 232]))),
-        (req, res) =>
+        (req, res) => {
           postUnlockMorePaint(req.params.sessionHash, req.params.identity)
             .then((result) => res.send(200))
-            .catch((e) => processError(res, e))
+            .catch((e) => processError(res, e));
+        }
       );
 
       app.post(
         `${BASE_URL}/sessions/:sessionHash/paint`,
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 384, extended: true }),
+        validate([
+          [isValidHash, ({ params }) => params.sessionHash],
+          [isValidHash, ({ body }) => body.revision],
+          [isValidIdentity, ({ body }) => body.identity],
+          [isValidSignature, ({ body }) => body.signature],
+          [isValidNumber(), ({ body }) => body.colorIndex],
+          [isValidNumber(), ({ body }) => body.positionIndex],
+        ]),
         (req, res) => {
           const set = connections.get(req.params.sessionHash);
           if (blockedUsers.has(req.body.identity)) return res.sendStatus(429);
@@ -483,17 +584,6 @@ Promise.all([database.initialize(), contract.initialize()])
 
           const positionIndex = parseInt(req.body.positionIndex);
           const colorIndex = parseInt(req.body.colorIndex);
-
-          if (
-            req.params.sessionHash.length !== 66 ||
-            req.body.revision.length !== 66 ||
-            req.body.identity.length !== 42 ||
-            req.body.signature.length !== 132 ||
-            isNaN(positionIndex) ||
-            isNaN(colorIndex) ||
-            colorIndex > 128
-          )
-            return res.sendStatus(400);
 
           postSessionPaint(
             req.params.sessionHash,
@@ -518,9 +608,10 @@ Promise.all([database.initialize(), contract.initialize()])
               const userCount =
                 connections.get(req.params.sessionHash)?.size || 1;
               const timeout =
-                (verificationMultiplier *
-                  (Math.ceil(userCount / 3) * 2500 * paintCost)) /
-                100;
+                verificationMultiplier *
+                (Math.ceil(userCount / TIMEOUT_USER_COUNT_CHANGE) *
+                  TIMEOUT_USER_COUNT_PENALTY *
+                  paintCost);
 
               blockedUsers.add(req.body.identity);
               setTimeout(() => blockedUsers.delete(req.body.identity), timeout);
@@ -550,6 +641,7 @@ Promise.all([database.initialize(), contract.initialize()])
         `${BASE_URL}/sessions/:sessionHash/prompt`,
         // we should use base64 eventually
         bodyParser.urlencoded({ limit: 256, extended: true }),
+        validate([[isValidHash, ({ params }) => params.sessionHash]]),
         (req, res) => {
           const { text, signature, identity } = req.body;
           if (blockedUsers.has(identity)) return res.sendStatus(429);
@@ -685,6 +777,7 @@ Promise.all([database.initialize(), contract.initialize()])
       app.post(
         `${BASE_URL}/account/:identity/authorization`,
         bodyParser.urlencoded({ limit: 192, extended: true }),
+        validate([[isValidIdentity, ({ params }) => params.identity]]),
         (req, res) => {
           try {
             const sequence = postAuthorizationSequence(
@@ -707,6 +800,28 @@ Promise.all([database.initialize(), contract.initialize()])
       // - needs to be signed
       // - simple signature check
       // - first 66 * 2 bytes of message is just signature
+
+      app.post(
+        `${BASE_URL}/account/:identity/username/set`,
+        bodyParser.urlencoded({ limit: 192, extended: true }),
+        validate([
+          [isValidIdentity, ({ params }) => params.identity],
+          [
+            isAlphanumeric({ isOptional: true, maxLength: 20 }),
+            ({ body }) => body.username,
+          ],
+        ]),
+        authorize<{
+          username: string;
+        }>((data) =>
+          Promise.resolve(getBytes(zeroPadValue(ec.encode(data.username), 32)))
+        ),
+        (req, res) => {
+          postSetUsername(req.params.identity, req.body.username)
+            .then((result) => res.send(200))
+            .catch((e) => processError(res, e));
+        }
+      );
 
       app.post(
         `${BASE_URL}/account/:identity/email/set`,
