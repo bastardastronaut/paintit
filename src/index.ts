@@ -629,6 +629,7 @@ Promise.all([database.initialize(), contract.initialize()])
                     new Uint8Array([colorIndex]),
                     zeroPadValue(toBeArray(positionIndex), 4),
                     updatedRevision,
+                    req.body.identity,
                   ])
                 )
               );

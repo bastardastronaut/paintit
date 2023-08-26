@@ -1,8 +1,8 @@
 export const ITERATION_LENGTH = parseInt(
-  process.env.ITERATION_LENGTH ?? (1 * 60).toString()
+  process.env.ITERATION_LENGTH ?? (15 * 60).toString()
 );
 export const ITERATION_COUNT = parseInt(
-  process.env.ITERATION_COUNT ?? (15).toString()
+  process.env.ITERATION_COUNT ?? (25).toString()
 );
 export const ITERATION_PAINT = parseInt(
   process.env.ITERATION_PAINT ?? (225).toString()
@@ -27,7 +27,7 @@ export const TIMEOUT_USER_COUNT_CHANGE = parseInt(
 );
 
 export const TIMEOUT_USER_COUNT_PENALTY = parseInt(
-  process.env.TIMEOUT_USER_COUNT_PENALTY ?? (25).toString()
+  process.env.TIMEOUT_USER_COUNT_PENALTY ?? (10).toString()
 );
 
 export const RATE_LIMIT_READ = parseInt(
