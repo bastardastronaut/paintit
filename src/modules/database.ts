@@ -348,7 +348,7 @@ export default class Database {
 
   getSessionByHash(hash: string): Promise<null | Session> {
     return this.get<Session>(
-      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON session_prompts.hash = sessions.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY sessions.hash`
+      `SELECT *, sessions.hash as hash, COUNT(identity) AS participants FROM sessions LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE sessions.hash='${hash}' GROUP BY session_paint.hash`
     );
   }
 
@@ -356,9 +356,9 @@ export default class Database {
   // then we won't need contributions section on account page
   getActiveSessions(identity?: string): Promise<Session[]> {
     return this.getAll(
-      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_prompts ON sessions.hash = session_prompts.hash LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration < max_iterations ${
+      `SELECT *, sessions.hash as hash, COUNT(*) AS participants FROM sessions LEFT JOIN session_paint ON session_paint.hash = sessions.hash WHERE current_iteration < max_iterations ${
         identity
-          ? `AND (session_prompts.identity = '${identity}' OR session_paint.identity = '${identity}')`
+          ? `AND session_paint.identity = '${identity}'`
           : ""
       } GROUP BY sessions.hash ORDER BY created_at DESC`
     );
