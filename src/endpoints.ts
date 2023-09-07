@@ -30,7 +30,7 @@ export default async (
   contract: Contract
 ) => {
   const account = await Account(clock, database, paint);
-  const transactions = await Transactions(database, contract);
+  const transactions = await Transactions(clock, database, contract);
   const session = await Session(database, paint, contract, filesystem, clock);
 
   const expiredSignatures = new Set<string>();

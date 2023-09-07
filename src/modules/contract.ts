@@ -55,13 +55,15 @@ export default class PaintContract {
   async signTransaction(
     identity: string,
     withdrawalId: string,
-    amount: number
+    amount: number,
+    createdAt: number
   ) {
     return this.account.signMessage(
       getBytes(
         concat([
           zeroPadValue(identity, 20),
           zeroPadValue(toBeArray(withdrawalId), 8),
+          zeroPadValue(toBeArray(createdAt), 8),
           zeroPadValue(toBeArray(amount), 32),
         ])
       )

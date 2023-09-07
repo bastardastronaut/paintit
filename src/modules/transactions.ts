@@ -1,5 +1,6 @@
 import { sha256, dataSlice } from "ethers";
-import { BadRequestError } from "../errors";
+import { BadRequestError, TooManyRequestsError } from "../errors";
+import Clock from "./clock";
 
 import Database from "./database";
 import Contract from "./contract";
@@ -12,7 +13,7 @@ const rewardCap = 10000;
 // is there a queue?
 // transactions are batched every 4 hours
 
-export default (database: Database, contract: Contract) => {
+export default (clock: Clock, database: Database, contract: Contract) => {
   // this is the transactions backend.
   // keeps track of daily rewards, and limits them.
   //
@@ -59,6 +60,8 @@ export default (database: Database, contract: Contract) => {
   // withdraw receipts.
   // keep getting larger and larger but only can be used once
 
+  const pendingWithdrawals = new Map<string, number>();
+
   const loadAllowance = (identity: string) =>
     Promise.all([
       contract.getWithdrawals(identity),
@@ -76,7 +79,9 @@ export default (database: Database, contract: Contract) => {
       loadAllowance(identity).then((allowance) => {
         if (allowance < amount) throw new BadRequestError("insufficient funds");
 
-        return database.insertTransactions([{ identity, amount: -amount, message }]);
+        return database.insertTransactions([
+          { identity, amount: -amount, message },
+        ]);
       }),
 
     loadTransactions: (identity: string) =>
@@ -88,8 +93,14 @@ export default (database: Database, contract: Contract) => {
         }))
       ),
 
-    requestWithdrawal: (identity: string, amount: number) =>
-      Promise.all([contract.getWithdrawals(identity), loadAllowance(identity)])
+    requestWithdrawal: (identity: string, amount: number) => {
+      if (pendingWithdrawals.get(identity))
+        throw new TooManyRequestsError("withdrawal pending");
+
+      return Promise.all([
+        contract.getWithdrawals(identity),
+        loadAllowance(identity),
+      ])
         .then(([withdrawals, allowance]) => {
           let _withdrawalId = sha256(identity);
           for (let i = 0; i < withdrawals.length; ++i) {
@@ -102,14 +113,23 @@ export default (database: Database, contract: Contract) => {
 
           const withdrawalId = dataSlice(_withdrawalId, 0, 8);
 
+          pendingWithdrawals.set(identity, amount);
+
+          clock.in(60).then(() => pendingWithdrawals.delete(identity));
+
+          const signedAt = clock.now;
+
           return Promise.all([
             Promise.resolve(withdrawalId),
-            contract.signTransaction(identity, withdrawalId, amount),
+            Promise.resolve(signedAt),
+            contract.signTransaction(identity, withdrawalId, amount, signedAt),
           ]);
         })
-        .then(([withdrawalId, signature]) => ({
+        .then(([withdrawalId, signedAt, signature]) => ({
           signature,
           withdrawalId,
-        })),
+          signedAt,
+        }));
+    },
   };
 };

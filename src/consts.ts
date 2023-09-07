@@ -1,5 +1,5 @@
 export const ITERATION_LENGTH = parseInt(
-  process.env.ITERATION_LENGTH ?? (15 * 60).toString()
+  process.env.ITERATION_LENGTH ?? (15).toString()
 );
 export const ITERATION_COUNT = parseInt(
   process.env.ITERATION_COUNT ?? (25).toString()
